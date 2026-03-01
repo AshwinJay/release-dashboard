@@ -23,7 +23,7 @@
 
 - [x] **Rename "Label / Tag" to "Label"** — In the service form and service card on the "Services in Release" tab, the field currently labelled "Label / Tag" should be renamed to just "Label".
 
-- **Move hotfix details below the service info panel** — On each service card, the hotfix section (hotfix label input, notes input, and the three merge status checkboxes for main, release branch, and hotfix branch) should appear directly below the panel that shows service name, repository, and change type — not at the very bottom of the card after the status row.
+- [x] **Move hotfix details below the service info panel** — On each service card, the hotfix section (hotfix label input, notes input, and the three merge status checkboxes for main, release branch, and hotfix branch) should appear directly below the panel that shows service name, repository, and change type — not at the very bottom of the card after the status row.
 
 - **Merge "Hotfix" and "Needs Hotfix" labels; replace "Request Hotfix" button** — Remove the dedicated "Request Hotfix" button from the service card. Instead, clicking the `needs-hotfix` status label should toggle hotfix mode on (and off) for that service, replacing both the button and the separate HOTFIX active-state pill. There should be a single combined label that reflects whether the service is in hotfix mode.
 

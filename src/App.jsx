@@ -399,17 +399,6 @@ function BoardTab({release,save,editingSvc,setEditingSvc,showAddForm,setShowAddF
                 <span style={s.svcLabel}>Depends on</span><span style={{color:t.textMuted}}>{svc.dependencies.join(", ")}</span>
               </div>}
             </div>
-            <div style={{display:"flex",flexWrap:"wrap",gap:4,padding:"10px 0 0",borderTop:`1px solid ${t.border}`}}>
-              {SVC_STATUSES.map(st=>(
-                <span key={st} onClick={()=>updateService(svc.id,{status:st})} style={{
-                  fontSize:9,padding:"2px 6px",borderRadius:3,cursor:"pointer",
-                  background:svc.status===st?STATUS_COLORS[st]:"transparent",
-                  color:svc.status===st?"#fff":t.textFaint,
-                  border:`1px solid ${svc.status===st?STATUS_COLORS[st]:t.border}`,
-                  textTransform:"uppercase",fontWeight:600,letterSpacing:"0.03em",transition:"all 0.12s",
-                }}>{st}</span>
-              ))}
-            </div>
             {svc.hasHotfix&&(
               <div style={{marginTop:10,padding:"12px 14px",borderTop:"2px solid #ef444444",background:"#ef444408",borderRadius:"0 0 6px 6px"}}>
                 <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
@@ -435,6 +424,17 @@ function BoardTab({release,save,editingSvc,setEditingSvc,showAddForm,setShowAddF
                 </div>
               </div>
             )}
+            <div style={{display:"flex",flexWrap:"wrap",gap:4,padding:"10px 0 0",borderTop:`1px solid ${t.border}`}}>
+              {SVC_STATUSES.map(st=>(
+                <span key={st} onClick={()=>updateService(svc.id,{status:st})} style={{
+                  fontSize:9,padding:"2px 6px",borderRadius:3,cursor:"pointer",
+                  background:svc.status===st?STATUS_COLORS[st]:"transparent",
+                  color:svc.status===st?"#fff":t.textFaint,
+                  border:`1px solid ${svc.status===st?STATUS_COLORS[st]:t.border}`,
+                  textTransform:"uppercase",fontWeight:600,letterSpacing:"0.03em",transition:"all 0.12s",
+                }}>{st}</span>
+              ))}
+            </div>
             {editingSvc===svc.id&&<ServiceForm initial={svc} allServices={release.services} onSave={patch=>{updateService(svc.id,patch);setEditingSvc(null);}} onCancel={()=>setEditingSvc(null)} isEdit s={s} t={t}/>}
           </div>
         ))}

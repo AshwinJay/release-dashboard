@@ -129,6 +129,23 @@ describe('Service status labels', () => {
   })
 })
 
+describe('Hotfix section layout', () => {
+  it('hotfix details appear before the status strip', async () => {
+    render(<App />)
+    await waitForLoad()
+    addService()
+    fireEvent.click(screen.getByTitle('Request hotfix'))
+    const hotfixInput = screen.getByPlaceholderText('e.g. v2.14.1-hotfix')
+    const pendingChip = screen.getAllByText('pending').find(
+      el => el.tagName.toLowerCase() === 'span' && el.textContent === 'pending'
+    )
+    // hotfix input must come before the status chip strip in the DOM
+    const order = hotfixInput.compareDocumentPosition(pendingChip)
+    // DOCUMENT_POSITION_FOLLOWING = 4 means pendingChip comes after hotfixInput
+    expect(order & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+})
+
 describe('Region Deploy tab — Label column', () => {
   it('shows a "Label" column header (not "Label / Tag")', async () => {
     render(<App />)
