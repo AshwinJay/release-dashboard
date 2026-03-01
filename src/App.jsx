@@ -43,7 +43,7 @@ const themes = {
     accent:"#3b82f6",inputBg:"#1e293b",
     labelBg:"#f59e0b15",successBg:"#10b98118",dangerBg:"#ef444418",
     successBorder:"#10b98133",dangerBorder:"#ef444433",
-    phaseActive:"22",phasePast:"11",shadow:"none",
+    shadow:"none",
     labelColor:"#d97706",saveBg:"#1e293b",
   },
   light: {
@@ -53,7 +53,7 @@ const themes = {
     accent:"#2563eb",inputBg:"#f8fafc",
     labelBg:"#fef3c7",successBg:"#dcfce7",dangerBg:"#fee2e2",
     successBorder:"#86efac",dangerBorder:"#fca5a5",
-    phaseActive:"20",phasePast:"10",shadow:"0 1px 3px rgba(0,0,0,0.08)",
+    shadow:"0 1px 3px rgba(0,0,0,0.08)",
     labelColor:"#92400e",saveBg:"#e2e8f0",
   },
 };
@@ -309,24 +309,6 @@ export default function ReleaseDashboard() {
           <span style={{fontSize:12,color:t.textMuted}}>Your browser doesn't support auto-save to disk. Use <strong>Export</strong> to download and <strong>Import</strong> to load files.</span>
         </div>
       )}
-
-      {/* Phase bar */}
-      <div style={s.phaseBar}>
-        {PHASES.map((p,i)=>{
-          const isActive=release.phase===p.key;
-          const isPast=PHASES.findIndex(x=>x.key===release.phase)>i;
-          return (
-            <div key={p.key} onClick={()=>save({...release,phase:p.key})} style={{
-              ...s.phaseStep,
-              background:isActive?p.color+t.phaseActive:isPast?p.color+t.phasePast:"transparent",
-              borderColor:isActive?p.color:isPast?p.color+"66":t.border,cursor:"pointer",
-            }}>
-              <span style={{fontSize:16}}>{p.icon}</span>
-              <span style={{fontSize:10,fontWeight:isActive?700:500,color:isActive?p.color:isPast?p.color+"cc":t.textFaint,textTransform:"uppercase",letterSpacing:"0.06em"}}>{p.label}</span>
-            </div>
-          );
-        })}
-      </div>
 
       {/* Stats */}
       <div style={s.statsStrip}>
@@ -618,8 +600,6 @@ function makeStyles(t) {
     header:{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 24px",borderBottom:`1px solid ${t.border}`,background:t.bgPanel,flexWrap:"wrap",gap:12},
     headerLeft:{display:"flex",alignItems:"center",gap:24,flexWrap:"wrap"},
     rmInput:{background:"transparent",border:"none",borderBottom:`1px solid ${t.borderLight}`,color:t.text,fontWeight:600,fontSize:14,padding:"2px 0",outline:"none",minWidth:140,fontFamily:"'IBM Plex Sans', sans-serif",display:"block"},
-    phaseBar:{display:"flex",gap:2,padding:"12px 24px",background:t.bgPanel,borderBottom:`1px solid ${t.border}`,overflowX:"auto"},
-    phaseStep:{display:"flex",alignItems:"center",gap:6,padding:"8px 14px",borderRadius:6,border:"1px solid",flex:1,minWidth:100,justifyContent:"center",transition:"all 0.2s"},
     statsStrip:{display:"flex",gap:0,padding:"0 24px",background:t.bgPanel,borderBottom:`1px solid ${t.border}`},
     stat:{display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"14px 24px",borderRight:`1px solid ${t.border}`,minWidth:90},
     tabBar:{display:"flex",gap:0,padding:"0 24px",background:t.bgPanel,borderBottom:`1px solid ${t.border}`,overflowX:"auto"},
