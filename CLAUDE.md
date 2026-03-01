@@ -1,9 +1,14 @@
 # Project conventions
 
+## Before every implementation
+
+1. **Explain the plan first** — describe what you intend to change and why before writing any code.
+2. **Seek input** — wait for explicit approval before proceeding. If the user says "go ahead" or similar, that counts.
+
 ## After every change
 
 1. **Run the tests** — `bun run test`. All tests must pass before committing.
-2. **Write tests for new behaviour** — any new feature or bug fix needs test coverage in `src/App.test.jsx`.
+2. **Write tests for every change** — any new feature, bug fix, or behaviour change needs test coverage in `src/App.test.jsx`. No exceptions.
 3. **Fix broken tests** — never leave a test suite in a failing state.
 4. **Keep README.md current** — if a feature is added, removed, or changes behaviour, update the relevant section in README.md (features, data model, field reference).
 5. **Keep TODOS.md current** — mark items `[x]` when done. Add new todos as they come up.

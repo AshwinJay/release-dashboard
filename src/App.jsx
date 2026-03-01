@@ -18,7 +18,7 @@ const PHASES = [
 ];
 
 const SVC_STATUSES = ["pending","branch-cut","labeled","testing","approved","needs-hotfix","hotfix-ready","deploying","deployed","failed"];
-const REGION_LIST = ["us-east-1", "us-west-2", "eu-west-1", "ap-southeast-1"];
+const REGION_LIST = ["pre-production", "us-east-1", "us-west-2", "eu-west-1", "ap-southeast-1"];
 const CHANGE_TYPES = ["code", "config", "both"];
 
 const STATUS_COLORS = {
@@ -453,7 +453,6 @@ function ServiceForm({initial,allServices,onSave,onCancel,isEdit,s}) {
         <div><label style={s.formLabel}>Service Name</label><input style={s.input} value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="e.g. auth-service"/></div>
         <div><label style={s.formLabel}>Repository</label><input style={s.input} value={form.repo} onChange={e=>setForm({...form,repo:e.target.value})} placeholder="e.g. org/auth-service"/></div>
         <div><label style={s.formLabel}>Change Type</label><select style={s.input} value={form.changeType} onChange={e=>setForm({...form,changeType:e.target.value})}>{CHANGE_TYPES.map(ct=><option key={ct} value={ct}>{ct}</option>)}</select></div>
-        <div><label style={s.formLabel}>Label / Tag</label><input style={s.input} value={form.label} onChange={e=>setForm({...form,label:e.target.value})} placeholder="e.g. v2.14.0-rc1"/></div>
         <div><label style={s.formLabel}>Point of Contact</label><input style={s.input} value={form.poc} onChange={e=>setForm({...form,poc:e.target.value})} placeholder="Name"/></div>
       </div>
       {otherServices.length>0&&<div style={{marginTop:12}}>
@@ -517,6 +516,7 @@ function DepsTab({release,s,t}) {
 
 function RegionsTab({release,save,s,t}) {
   const updateRegion=(svcId,region,status)=>{save({...release,services:release.services.map(x=>x.id===svcId?{...x,regions:{...x.regions,[region]:status}}:x)});};
+  const updateLabel=(svcId,val)=>{save({...release,services:release.services.map(x=>x.id===svcId?{...x,label:val}:x)});};
   if(release.services.length===0)return <div style={s.empty}>Add services to track regional deployments.</div>;
   const regionStatuses=["pending","deploying","deployed","failed"];
   const regionColors={pending:"#6b7280",deploying:"#f59e0b",deployed:"#10b981",failed:"#ef4444"};
@@ -526,14 +526,19 @@ function RegionsTab({release,save,s,t}) {
       <div style={{overflowX:"auto"}}>
         <table style={{width:"100%",borderCollapse:"collapse"}}>
           <thead><tr>
-            <th style={s.th}>Service</th><th style={s.th}>Label</th>
+            <th style={s.th}>Service</th><th style={s.th}>Label / Tag</th>
             {REGION_LIST.map(r=><th key={r} style={s.th}>{r}</th>)}
           </tr></thead>
           <tbody>
             {release.services.map(svc=>(
               <tr key={svc.id}>
                 <td style={s.td}><span style={{fontWeight:600,color:t.text}}>{svc.name}</span></td>
-                <td style={s.td}><code style={{...s.labelCode,fontSize:11}}>{svc.hasHotfix&&svc.hotfixLabel?svc.hotfixLabel:svc.label}</code></td>
+                <td style={s.td}>
+                  {svc.hasHotfix&&svc.hotfixLabel
+                    ? <code style={{...s.labelCode,fontSize:11}}>{svc.hotfixLabel}</code>
+                    : <input style={{...s.input,padding:"4px 8px",fontSize:11,fontFamily:"'JetBrains Mono', monospace",minWidth:120}} value={svc.label||""} onChange={e=>updateLabel(svc.id,e.target.value)} placeholder="e.g. v2.14.0-rc1"/>
+                  }
+                </td>
                 {REGION_LIST.map(r=>(
                   <td key={r} style={s.td}>
                     <select value={svc.regions[r]||"pending"} onChange={e=>updateRegion(svc.id,r,e.target.value)} style={{
