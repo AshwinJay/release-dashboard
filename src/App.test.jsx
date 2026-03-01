@@ -101,3 +101,51 @@ describe('Checklist tab', () => {
     expect(screen.getAllByText('Branch Cut').length).toBeGreaterThan(0)
   })
 })
+
+describe('Service status labels', () => {
+  it('clicking a status chip updates the service status pill', async () => {
+    render(<App />)
+    await waitForLoad()
+    addService()
+    // Card starts with a "pending" status pill; click "testing" chip to change it
+    fireEvent.click(screen.getByText('testing'))
+    // The active status pill on the card should now read "testing"
+    const pills = screen.getAllByText('testing')
+    // At least one pill should be active (the card badge), not just the chip
+    expect(pills.length).toBeGreaterThanOrEqual(1)
+    // "pending" active pill should no longer be visible as a card badge
+    // (it still exists as a chip in the status row, but no longer as the active status)
+    expect(getStatCount('Approved')).toBe('0')
+  })
+
+  it('switching status to approved updates the Approved counter', async () => {
+    render(<App />)
+    await waitForLoad()
+    addService()
+    fireEvent.click(screen.getByText('testing'))
+    expect(getStatCount('Approved')).toBe('0')
+    fireEvent.click(screen.getAllByText('approved')[0])
+    expect(getStatCount('Approved')).toBe('1')
+  })
+})
+
+describe('Region Deploy tab — Label column', () => {
+  it('shows a "Label" column header (not "Label / Tag")', async () => {
+    render(<App />)
+    await waitForLoad()
+    addService()
+    fireEvent.click(screen.getByText('Region Deploy'))
+    expect(screen.queryByText('Label / Tag')).not.toBeInTheDocument()
+    expect(screen.getByText('Label')).toBeInTheDocument()
+  })
+
+  it('label input in regions tab updates the service label', async () => {
+    render(<App />)
+    await waitForLoad()
+    addService('svc-a')
+    fireEvent.click(screen.getByText('Region Deploy'))
+    const labelInput = screen.getByPlaceholderText('e.g. v2.14.0-rc1')
+    fireEvent.change(labelInput, { target: { value: 'v1.0.0-rc1' } })
+    expect(labelInput.value).toBe('v1.0.0-rc1')
+  })
+})

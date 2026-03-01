@@ -526,7 +526,7 @@ function RegionsTab({release,save,s,t}) {
       <div style={{overflowX:"auto"}}>
         <table style={{width:"100%",borderCollapse:"collapse"}}>
           <thead><tr>
-            <th style={s.th}>Service</th><th style={s.th}>Label / Tag</th>
+            <th style={s.th}>Service</th><th style={s.th}>Label</th>
             {REGION_LIST.map(r=><th key={r} style={s.th}>{r}</th>)}
           </tr></thead>
           <tbody>
@@ -560,7 +560,7 @@ function RegionsTab({release,save,s,t}) {
 function ChecklistTab({release,save,s,t}) {
   const items=[
     {key:"branches_cut",label:"Thursday: Release branches cut for all services",phase:"branch-cut"},
-    {key:"labels_produced",label:"Thursday: Labels/tags produced across all repositories",phase:"labeled"},
+    {key:"labels_produced",label:"Thursday: Labels produced across all repositories",phase:"labeled"},
     {key:"preproduction_deployed",label:"Thursday/Friday: Labels deployed to pre-production",phase:"testing"},
     {key:"weekend_testing",label:"Weekend: Testing completed in pre-production",phase:"testing"},
     {key:"hotfixes_applied",label:"If needed: Hotfix branches cut and new labels produced",phase:"testing"},
