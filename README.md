@@ -45,7 +45,9 @@ Data is saved as `release-YYYY-WNN.json` (e.g. `release-2026-W10.json`). Two mod
 - **Chrome / Edge** — uses the [File System Access API](https://developer.chrome.com/docs/capabilities/web-apis/file-system-access). Click "Set Save Folder" once; changes auto-save after 1 second of inactivity.
 - **Other browsers** — use **Export** to download the JSON and **Import** to load it back.
 
-Navigate between weeks with the `◀` / `▶` arrows in the header. Each week is an independent file.
+The header has a **Session File** field showing the base name of the active JSON file (e.g. `release-2026-W10`). Edit it and press Enter (or tab away) to switch to a different file — if a save folder is connected the new file is loaded automatically, otherwise use Import/Export. Importing a file also updates the session file name to match the loaded file's name.
+
+The header also has fields for the **Release Branch** (e.g. `release/2026-W10`) and **Hotfix Branch** (e.g. `hotfix/auth-token-expiry`) for the current session. These are stored in the JSON file alongside the release manager name and phase.
 
 ### Dark / Light Mode
 Follows the OS preference automatically. No manual toggle needed.
@@ -86,6 +88,8 @@ Each week's release is stored as a single JSON file:
 ```json
 {
   "releaseManager": "Alice",
+  "releaseBranch": "release/2026-W10",
+  "hotfixBranch": "hotfix/auth-token-expiry",
   "phase": "deploying",
   "notes": "Smooth week, one hotfix on auth-service",
   "checklist": { "branches_cut": true, "labels_produced": true },

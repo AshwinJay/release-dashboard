@@ -27,7 +27,7 @@ const STATUS_COLORS = {
   deploying:"#f97316",deployed:"#10b981",failed:"#ef4444",
 };
 
-const EMPTY_RELEASE = { releaseManager: "", phase: "planning", services: [], notes: "" };
+const EMPTY_RELEASE = { releaseManager: "", releaseBranch: "", hotfixBranch: "", phase: "planning", services: [], notes: "" };
 const EMPTY_SERVICE = {
   id:"",name:"",repo:"",changeType:"code",label:"",hotfixLabel:"",
   poc:"",dependencies:[],status:"pending",regions:{},hasHotfix:false,
@@ -62,14 +62,18 @@ const themes = {
 //   1. Chrome/Edge: File System Access API — pick a folder once, auto-saves
 //   2. Fallback: Export (download) / Import (upload) buttons
 
-function useFileStorage(weekId) {
+function useFileStorage() {
+  const [baseName, setBaseName] = useState(`release-${getWeekId()}`);
   const [release, setRelease] = useState({ ...EMPTY_RELEASE });
   const [loading, setLoading] = useState(true);
   const [dirty, setDirty] = useState(false);
   const [saveStatus, setSaveStatus] = useState("idle");
   const dirHandleRef = useRef(null);
   const autoSaveTimer = useRef(null);
-  const fileName = `release-${weekId}.json`;
+  // Prevents loadRelease from firing after importFile sets baseName + release together
+  const skipNextLoad = useRef(false);
+  const [hasDirectoryAccess, setHasDirectoryAccess] = useState(false);
+  const fileName = `${baseName}.json`;
 
   const readFromDir = useCallback(async (dirHandle, file) => {
     try {
@@ -87,20 +91,23 @@ function useFileStorage(weekId) {
     await writable.close();
   }, []);
 
-  const loadRelease = useCallback(async () => {
-    setLoading(true);
-    setDirty(false);
-    setSaveStatus("idle");
-    if (dirHandleRef.current) {
-      const data = await readFromDir(dirHandleRef.current, fileName);
+  // Load from directory (or reset) whenever the active file changes.
+  // All setState calls are inside .then() so they happen asynchronously,
+  // satisfying react-hooks/set-state-in-effect. The initial loading=true
+  // from useState(true) covers the first-render spinner; subsequent session
+  // switches just swap content without an intermediate spinner.
+  useEffect(() => {
+    if (skipNextLoad.current) { skipNextLoad.current = false; return; }
+    const pending = dirHandleRef.current
+      ? readFromDir(dirHandleRef.current, fileName)
+      : Promise.resolve(null);
+    pending.then(data => {
       setRelease(data || { ...EMPTY_RELEASE });
-    } else {
-      setRelease({ ...EMPTY_RELEASE });
-    }
-    setLoading(false);
+      setDirty(false);
+      setSaveStatus("idle");
+      setLoading(false);
+    });
   }, [fileName, readFromDir]);
-
-  useEffect(() => { loadRelease(); }, [loadRelease]);
 
   // Auto-save 1s after last change when directory is connected
   useEffect(() => {
@@ -127,6 +134,7 @@ function useFileStorage(weekId) {
     try {
       const handle = await window.showDirectoryPicker({ mode: "readwrite" });
       dirHandleRef.current = handle;
+      setHasDirectoryAccess(true);
       const data = await readFromDir(handle, fileName);
       if (data) setRelease(data);
       return true;
@@ -153,7 +161,14 @@ function useFileStorage(weekId) {
         try {
           const text = await file.text();
           const data = JSON.parse(text);
-          setRelease(data); setDirty(false); resolve(true);
+          const importedBase = file.name.replace(/\.json$/, "");
+          // Set the skip flag before updating baseName so the loadRelease
+          // triggered by the fileName change doesn't overwrite our imported data
+          skipNextLoad.current = true;
+          setBaseName(importedBase);
+          setRelease(data);
+          setDirty(false);
+          resolve(true);
         } catch { resolve(false); }
       };
       input.click();
@@ -161,9 +176,9 @@ function useFileStorage(weekId) {
   };
 
   return {
-    release, loading, save, dirty, saveStatus, fileName,
+    release, loading, save, dirty, saveStatus, fileName, baseName, setBaseName,
     pickDirectory, exportFile, importFile,
-    hasDirectoryAccess: !!dirHandleRef.current,
+    hasDirectoryAccess,
     hasFSAccessAPI: !!window.showDirectoryPicker,
   };
 }
@@ -194,25 +209,23 @@ const Pill = ({ color, children, onClick, active }) => (
 export default function ReleaseDashboard() {
   const mode = useColorScheme();
   const t = themes[mode];
-  const s = useMemo(() => makeStyles(t, mode), [mode]);
+  const s = useMemo(() => makeStyles(t), [t]);
 
-  const [weekId, setWeekId] = useState(getWeekId());
   const [tab, setTab] = useState("board");
   const [editingSvc, setEditingSvc] = useState(null);
   const [showAddForm, setShowAddForm] = useState(false);
 
   const {
-    release, loading, save, dirty, saveStatus, fileName,
+    release, loading, save, dirty, saveStatus, fileName, baseName, setBaseName,
     pickDirectory, exportFile, importFile,
     hasDirectoryAccess, hasFSAccessAPI,
-  } = useFileStorage(weekId);
+  } = useFileStorage();
 
-  const shiftWeek = (dir) => {
-    const parts = weekId.split("-W");
-    let y = parseInt(parts[0]), w = parseInt(parts[1]) + dir;
-    if (w < 1) { y--; w = 52; } if (w > 52) { y++; w = 1; }
-    setWeekId(`${y}-W${String(w).padStart(2, "0")}`);
-  };
+  // Controlled input for the session file name — only commits to baseName on blur/Enter
+  // so typing character-by-character doesn't trigger a reload on each keystroke
+  const [fileInput, setFileInput] = useState(baseName);
+  useEffect(() => { setFileInput(baseName); }, [baseName]);
+  const commitFileName = () => { if (fileInput.trim()) setBaseName(fileInput.trim()); };
 
   if (loading) return (
     <div style={{ display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",gap:12,background:t.bg }}>
@@ -240,11 +253,16 @@ export default function ReleaseDashboard() {
             <span style={{fontSize:22,color:t.accent}}>◈</span>
             <span style={{fontFamily:"'JetBrains Mono', monospace",fontWeight:700,fontSize:14,letterSpacing:"0.1em",color:t.text}}>RELEASE COMMAND</span>
           </div>
-          <div style={{display:"flex",alignItems:"center",gap:8}}>
-            <button style={s.weekBtn} onClick={()=>shiftWeek(-1)}>◀</button>
-            <span style={{fontFamily:"'JetBrains Mono', monospace",fontWeight:700,fontSize:16,color:t.accent}}>{weekId}</span>
-            <button style={s.weekBtn} onClick={()=>shiftWeek(1)}>▶</button>
-            {weekId!==getWeekId()&&<button style={{...s.weekBtn,fontSize:10,marginLeft:4}} onClick={()=>setWeekId(getWeekId())}>TODAY</button>}
+          <div>
+            <span style={{color:t.textDim,fontSize:10,textTransform:"uppercase",letterSpacing:"0.08em",display:"block"}}>Session File</span>
+            <input
+              style={{...s.rmInput,fontFamily:"'JetBrains Mono', monospace",fontSize:14,color:t.accent,minWidth:200}}
+              value={fileInput}
+              onChange={e=>setFileInput(e.target.value)}
+              onBlur={commitFileName}
+              onKeyDown={e=>e.key==="Enter"&&commitFileName()}
+              placeholder={`release-${getWeekId()}`}
+            />
           </div>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
@@ -265,6 +283,14 @@ export default function ReleaseDashboard() {
           <div>
             <span style={{color:t.textDim,fontSize:10,textTransform:"uppercase",letterSpacing:"0.08em",display:"block"}}>Release Manager</span>
             <input style={s.rmInput} value={release.releaseManager} placeholder="Enter name…" onChange={e=>save({...release,releaseManager:e.target.value})} />
+          </div>
+          <div>
+            <span style={{color:t.textDim,fontSize:10,textTransform:"uppercase",letterSpacing:"0.08em",display:"block"}}>Release Branch</span>
+            <input style={s.rmInput} value={release.releaseBranch||""} placeholder={`release/${getWeekId()}`} onChange={e=>save({...release,releaseBranch:e.target.value})} />
+          </div>
+          <div>
+            <span style={{color:t.textDim,fontSize:10,textTransform:"uppercase",letterSpacing:"0.08em",display:"block"}}>Hotfix Branch</span>
+            <input style={s.rmInput} value={release.hotfixBranch||""} placeholder="hotfix/…" onChange={e=>save({...release,hotfixBranch:e.target.value})} />
           </div>
         </div>
       </header>
@@ -407,7 +433,7 @@ function BoardTab({release,save,editingSvc,setEditingSvc,showAddForm,setShowAddF
   );
 }
 
-function ServiceForm({initial,allServices,onSave,onCancel,isEdit,s,t}) {
+function ServiceForm({initial,allServices,onSave,onCancel,isEdit,s}) {
   const [form,setForm]=useState(initial||{name:"",repo:"",changeType:"code",label:"",poc:"",dependencies:[]});
   const otherServices=allServices.filter(x=>x.id!==initial?.id).map(x=>x.name);
   const toggleDep=(name)=>setForm(f=>({...f,dependencies:f.dependencies.includes(name)?f.dependencies.filter(d=>d!==name):[...f.dependencies,name]}));
@@ -586,12 +612,11 @@ function ChecklistTab({release,save,s,t}) {
   );
 }
 
-function makeStyles(t,mode) {
+function makeStyles(t) {
   return {
     root:{fontFamily:"'IBM Plex Sans', -apple-system, sans-serif",background:t.bg,color:t.text,minHeight:"100vh",display:"flex",flexDirection:"column"},
     header:{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 24px",borderBottom:`1px solid ${t.border}`,background:t.bgPanel,flexWrap:"wrap",gap:12},
     headerLeft:{display:"flex",alignItems:"center",gap:24,flexWrap:"wrap"},
-    weekBtn:{background:t.inputBg,border:`1px solid ${t.borderLight}`,color:t.textMuted,borderRadius:4,padding:"4px 10px",cursor:"pointer",fontWeight:600,fontSize:12},
     rmInput:{background:"transparent",border:"none",borderBottom:`1px solid ${t.borderLight}`,color:t.text,fontWeight:600,fontSize:14,padding:"2px 0",outline:"none",minWidth:140,fontFamily:"'IBM Plex Sans', sans-serif",display:"block"},
     phaseBar:{display:"flex",gap:2,padding:"12px 24px",background:t.bgPanel,borderBottom:`1px solid ${t.border}`,overflowX:"auto"},
     phaseStep:{display:"flex",alignItems:"center",gap:6,padding:"8px 14px",borderRadius:6,border:"1px solid",flex:1,minWidth:100,justifyContent:"center",transition:"all 0.2s"},
