@@ -4,9 +4,9 @@
 
 - [x] **Release & hotfix branch names in header** — Add input fields at the top of the dashboard to capture the release branch name and the hotfix branch name for the current week (e.g. `release/2026-W10`, `hotfix/auth-token-expiry`). These should be stored in the weekly JSON file alongside existing release metadata.
 
-- **Inline hotfix tracking per service** — Remove the separate Hotfix Tracker tab. Instead, add a hotfix section directly on each service card in the service board. All functionality from the hotfix tab (hotfix branch label, notes, and merge status checkboxes for main/release/hotfix branch) should be accessible inline per service, toggled by a "Request Hotfix" option on the service.
+- [x] **Inline hotfix tracking per service** — Remove the separate Hotfix Tracker tab. Instead, add a hotfix section directly on each service card in the service board. All functionality from the hotfix tab (hotfix branch label, notes, and merge status checkboxes for main/release/hotfix branch) should be accessible inline per service, toggled by a "Request Hotfix" option on the service.
 
-- **Hotfix merge status checkboxes** — For each hotfix entry, add a sub-section with three checkboxes to track where the hotfix has been merged:
+- [x] **Hotfix merge status checkboxes** — For each hotfix entry, add a sub-section with three checkboxes to track where the hotfix has been merged:
   - Merged to main
   - Merged to release branch
   - Merged to hotfix branch

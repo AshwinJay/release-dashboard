@@ -32,6 +32,7 @@ const EMPTY_SERVICE = {
   id:"",name:"",repo:"",changeType:"code",label:"",hotfixLabel:"",
   poc:"",dependencies:[],status:"pending",regions:{},hasHotfix:false,
   hotfixNotes:"",deployConfirmed:false,
+  hotfixMergedMain:false,hotfixMergedRelease:false,hotfixMergedHotfix:false,
 };
 
 const themes = {
@@ -339,7 +340,7 @@ export default function ReleaseDashboard() {
 
       {/* Tabs */}
       <div style={s.tabBar}>
-        {[{key:"board",label:"Service Board"},{key:"deps",label:"Dependencies"},{key:"regions",label:"Region Deploy"},{key:"hotfixes",label:"Hotfixes"},{key:"checklist",label:"Release Checklist"}].map(tb=>(
+        {[{key:"board",label:"Service Board"},{key:"deps",label:"Dependencies"},{key:"regions",label:"Region Deploy"},{key:"checklist",label:"Release Checklist"}].map(tb=>(
           <button key={tb.key} onClick={()=>setTab(tb.key)} style={{
             ...s.tab,borderBottomColor:tab===tb.key?t.accent:"transparent",color:tab===tb.key?t.text:t.textDim,
           }}>{tb.label}</button>
@@ -350,7 +351,6 @@ export default function ReleaseDashboard() {
         {tab==="board"&&<BoardTab release={release} save={save} editingSvc={editingSvc} setEditingSvc={setEditingSvc} showAddForm={showAddForm} setShowAddForm={setShowAddForm} s={s} t={t}/>}
         {tab==="deps"&&<DepsTab release={release} s={s} t={t}/>}
         {tab==="regions"&&<RegionsTab release={release} save={save} s={s} t={t}/>}
-        {tab==="hotfixes"&&<HotfixTab release={release} save={save} s={s} t={t}/>}
         {tab==="checklist"&&<ChecklistTab release={release} save={save} s={s} t={t}/>}
       </div>
 
@@ -373,6 +373,8 @@ function BoardTab({release,save,editingSvc,setEditingSvc,showAddForm,setShowAddF
   };
   const updateService=(id,patch)=>{save({...release,services:release.services.map(x=>x.id===id?{...x,...patch}:x)});};
   const removeService=(id)=>{if(confirm("Remove this service?")){save({...release,services:release.services.filter(x=>x.id!==id)});if(editingSvc===id)setEditingSvc(null);}};
+  const toggleHotfix=(svcId)=>{save({...release,services:release.services.map(x=>x.id===svcId?{...x,hasHotfix:!x.hasHotfix,status:!x.hasHotfix?"needs-hotfix":x.status}:x)});};
+  const updateHotfix=(svcId,field,val)=>{save({...release,services:release.services.map(x=>x.id===svcId?{...x,[field]:val}:x)});};;
 
   return (
     <div>
@@ -398,6 +400,7 @@ function BoardTab({release,save,editingSvc,setEditingSvc,showAddForm,setShowAddF
                 </div>
               </div>
               <div style={{display:"flex",gap:6}}>
+                <button style={{...s.iconBtn,borderColor:svc.hasHotfix?"#ef4444":undefined,color:svc.hasHotfix?"#ef4444":undefined}} onClick={()=>toggleHotfix(svc.id)} title={svc.hasHotfix?"Cancel hotfix":"Request hotfix"}>{svc.hasHotfix?"✕ Hotfix":"🔥"}</button>
                 <button style={s.iconBtn} onClick={()=>setEditingSvc(editingSvc===svc.id?null:svc.id)}>✏️</button>
                 <button style={s.iconBtn} onClick={()=>removeService(svc.id)}>🗑️</button>
               </div>
@@ -425,6 +428,31 @@ function BoardTab({release,save,editingSvc,setEditingSvc,showAddForm,setShowAddF
                 }}>{st}</span>
               ))}
             </div>
+            {svc.hasHotfix&&(
+              <div style={{marginTop:10,padding:"12px 14px",borderTop:"2px solid #ef444444",background:"#ef444408",borderRadius:"0 0 6px 6px"}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+                  <span style={{fontSize:11,fontWeight:700,color:"#ef4444",textTransform:"uppercase",letterSpacing:"0.08em"}}>🔥 Hotfix</span>
+                </div>
+                <div style={{display:"flex",gap:10,marginBottom:10,flexWrap:"wrap"}}>
+                  <div style={{flex:1,minWidth:160}}><label style={s.formLabel}>Hotfix Label</label><input style={s.input} value={svc.hotfixLabel||""} onChange={e=>updateHotfix(svc.id,"hotfixLabel",e.target.value)} placeholder="e.g. v2.14.1-hotfix"/></div>
+                  <div style={{flex:2,minWidth:200}}><label style={s.formLabel}>Hotfix Notes</label><input style={s.input} value={svc.hotfixNotes||""} onChange={e=>updateHotfix(svc.id,"hotfixNotes",e.target.value)} placeholder="What bug is being fixed?"/></div>
+                </div>
+                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontSize:13,color:t.text}}>
+                    <input type="checkbox" checked={!!svc.hotfixMergedMain} onChange={e=>updateHotfix(svc.id,"hotfixMergedMain",e.target.checked)} style={{accentColor:"#ef4444"}}/>
+                    Merged to main
+                  </label>
+                  <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontSize:13,color:t.text}}>
+                    <input type="checkbox" checked={!!svc.hotfixMergedRelease} onChange={e=>updateHotfix(svc.id,"hotfixMergedRelease",e.target.checked)} style={{accentColor:"#ef4444"}}/>
+                    {release.releaseBranch?`Merged to ${release.releaseBranch}`:"Merged to release branch"}
+                  </label>
+                  <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontSize:13,color:t.text}}>
+                    <input type="checkbox" checked={!!svc.hotfixMergedHotfix} onChange={e=>updateHotfix(svc.id,"hotfixMergedHotfix",e.target.checked)} style={{accentColor:"#ef4444"}}/>
+                    {release.hotfixBranch?`Merged to ${release.hotfixBranch}`:"Merged to hotfix branch"}
+                  </label>
+                </div>
+              </div>
+            )}
             {editingSvc===svc.id&&<ServiceForm initial={svc} allServices={release.services} onSave={patch=>{updateService(svc.id,patch);setEditingSvc(null);}} onCancel={()=>setEditingSvc(null)} isEdit s={s} t={t}/>}
           </div>
         ))}
@@ -541,34 +569,6 @@ function RegionsTab({release,save,s,t}) {
   );
 }
 
-function HotfixTab({release,save,s,t}) {
-  const toggleHotfix=(svcId)=>{save({...release,services:release.services.map(x=>x.id===svcId?{...x,hasHotfix:!x.hasHotfix,status:!x.hasHotfix?"needs-hotfix":x.status}:x)});};
-  const updateHotfix=(svcId,field,val)=>{save({...release,services:release.services.map(x=>x.id===svcId?{...x,[field]:val}:x)});};
-  if(release.services.length===0)return <div style={s.empty}>Add services first.</div>;
-  return (
-    <div>
-      <h2 style={s.sectionTitle}>Hotfix Tracker</h2>
-      <p style={{color:t.textDim,fontSize:13,marginBottom:16}}>Flag services that need bug fixes. This tracks hotfix branches and updated labels.</p>
-      {release.services.map(svc=>(
-        <div key={svc.id} style={s.hotfixRow}>
-          <div style={{display:"flex",alignItems:"center",gap:10,flex:1}}>
-            <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer"}}>
-              <input type="checkbox" checked={svc.hasHotfix} onChange={()=>toggleHotfix(svc.id)} style={{accentColor:"#ef4444"}}/>
-              <span style={{fontWeight:600,color:t.text,fontSize:14}}>{svc.name}</span>
-            </label>
-            {svc.hasHotfix&&<Pill color="#ef4444" active>HOTFIX REQUIRED</Pill>}
-          </div>
-          {svc.hasHotfix&&(
-            <div style={{display:"flex",gap:10,marginTop:8,width:"100%"}}>
-              <div style={{flex:1}}><label style={s.formLabel}>Hotfix Label</label><input style={s.input} value={svc.hotfixLabel} onChange={e=>updateHotfix(svc.id,"hotfixLabel",e.target.value)} placeholder="e.g. v2.14.1-hotfix"/></div>
-              <div style={{flex:2}}><label style={s.formLabel}>Hotfix Notes</label><input style={s.input} value={svc.hotfixNotes} onChange={e=>updateHotfix(svc.id,"hotfixNotes",e.target.value)} placeholder="What bug is being fixed?"/></div>
-            </div>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
 
 function ChecklistTab({release,save,s,t}) {
   const items=[
@@ -644,7 +644,6 @@ function makeStyles(t) {
     th:{padding:"10px 12px",textAlign:"left",fontSize:10,color:t.textDim,textTransform:"uppercase",letterSpacing:"0.08em",borderBottom:`1px solid ${t.border}`,fontWeight:600},
     td:{padding:"10px 12px",borderBottom:`1px solid ${t.border}11`,fontSize:13},
     regionSelect:{border:"1px solid",borderRadius:4,padding:"4px 8px",fontSize:11,fontWeight:600,textTransform:"uppercase",cursor:"pointer",outline:"none",fontFamily:"'IBM Plex Sans', sans-serif"},
-    hotfixRow:{background:t.bgCard,border:`1px solid ${t.border}`,borderRadius:8,padding:14,marginBottom:8,display:"flex",flexWrap:"wrap",alignItems:"center",boxShadow:t.shadow},
     checkItem:{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderBottom:`1px solid ${t.border}11`,cursor:"pointer",borderRadius:4,transition:"background 0.1s"},
     progressBar:{height:6,background:t.inputBg,borderRadius:3,overflow:"hidden",marginBottom:6},
     progressFill:{height:"100%",background:`linear-gradient(90deg, ${t.accent}, #10b981)`,borderRadius:3,transition:"width 0.3s"},
