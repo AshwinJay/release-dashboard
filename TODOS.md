@@ -13,7 +13,7 @@
 
 - [x] **Remove phase bar** — The "📋 Planning → ✂️ Branch Cut → 🏷️ Labeled → 🧪 Testing → 👀 Mon Review → 🚀 Deploying → ✅ Done" bar at the top is clickable but has no functional effect. Remove it entirely.
 
-- **Fix or remove summary counters** — The stat counters at the top of the dashboard (Services, Approved, Deployed, Hotfixes, Failed) are broken: Approved and Deployed always show 0 even when services are in those states. Either fix the counts to reflect actual service statuses or remove the counter strip entirely.
+- [x] **Fix or remove summary counters** — The stat counters at the top of the dashboard (Services, Approved, Deployed, Hotfixes, Failed) are broken: Approved and Deployed always show 0 even when services are in those states. Either fix the counts to reflect actual service statuses or remove the counter strip entirely.
 
 - **Add pre-production to regional deployment tracker** — Add a `pre-production` entry to the regional deployment tracker alongside the existing regions (`us-east-1`, `us-west-2`, `eu-west-1`, `ap-southeast-1`).
 
