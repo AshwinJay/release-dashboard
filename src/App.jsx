@@ -374,7 +374,6 @@ function BoardTab({release,save,editingSvc,setEditingSvc,showAddForm,setShowAddF
                 <div style={{display:"flex",alignItems:"center",gap:8}}>
                   <span style={s.svcName}>{svc.name}</span>
                   <Pill color={STATUS_COLORS[svc.status]} active>{svc.status}</Pill>
-                  {svc.hasHotfix&&<Pill color="#ef4444" active>HOTFIX</Pill>}
                 </div>
                 <div style={{display:"flex",alignItems:"center",gap:6,marginTop:4,fontSize:12,color:t.textDim}}>
                   <span>{svc.repo}</span><span style={{color:t.textFaint}}>•</span>
@@ -382,7 +381,6 @@ function BoardTab({release,save,editingSvc,setEditingSvc,showAddForm,setShowAddF
                 </div>
               </div>
               <div style={{display:"flex",gap:6}}>
-                <button style={{...s.iconBtn,borderColor:svc.hasHotfix?"#ef4444":undefined,color:svc.hasHotfix?"#ef4444":undefined}} onClick={()=>toggleHotfix(svc.id)} title={svc.hasHotfix?"Cancel hotfix":"Request hotfix"}>{svc.hasHotfix?"✕ Hotfix":"🔥"}</button>
                 <button style={s.iconBtn} onClick={()=>setEditingSvc(editingSvc===svc.id?null:svc.id)}>✏️</button>
                 <button style={s.iconBtn} onClick={()=>removeService(svc.id)}>🗑️</button>
               </div>
@@ -425,15 +423,19 @@ function BoardTab({release,save,editingSvc,setEditingSvc,showAddForm,setShowAddF
               </div>
             )}
             <div style={{display:"flex",flexWrap:"wrap",gap:4,padding:"10px 0 0",borderTop:`1px solid ${t.border}`}}>
-              {SVC_STATUSES.map(st=>(
-                <span key={st} onClick={()=>updateService(svc.id,{status:st})} style={{
-                  fontSize:9,padding:"2px 6px",borderRadius:3,cursor:"pointer",
-                  background:svc.status===st?STATUS_COLORS[st]:"transparent",
-                  color:svc.status===st?"#fff":t.textFaint,
-                  border:`1px solid ${svc.status===st?STATUS_COLORS[st]:t.border}`,
-                  textTransform:"uppercase",fontWeight:600,letterSpacing:"0.03em",transition:"all 0.12s",
-                }}>{st}</span>
-              ))}
+              {SVC_STATUSES.map(st=>{
+                const isHotfixChip = st === "needs-hotfix";
+                const active = isHotfixChip ? svc.hasHotfix : svc.status === st;
+                return (
+                  <span key={st} onClick={()=>isHotfixChip?toggleHotfix(svc.id):updateService(svc.id,{status:st})} style={{
+                    fontSize:9,padding:"2px 6px",borderRadius:3,cursor:"pointer",
+                    background:active?STATUS_COLORS[st]:"transparent",
+                    color:active?"#fff":t.textFaint,
+                    border:`1px solid ${active?STATUS_COLORS[st]:t.border}`,
+                    textTransform:"uppercase",fontWeight:600,letterSpacing:"0.03em",transition:"all 0.12s",
+                  }}>{st}</span>
+                );
+              })}
             </div>
             {editingSvc===svc.id&&<ServiceForm initial={svc} allServices={release.services} onSave={patch=>{updateService(svc.id,patch);setEditingSvc(null);}} onCancel={()=>setEditingSvc(null)} isEdit s={s} t={t}/>}
           </div>
