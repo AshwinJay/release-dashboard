@@ -19,9 +19,9 @@
 
 - [x] **Move label/tag to regional deployment tab** — Remove the label/tag field from the service board and display it in the regional deployment tracker tab instead.
 
-- **Wire up service status labels** — On the "Services in Release" tab, each service card has a row of selectable status labels (`pending`, `branch-cut`, `labeled`, `testing`, `approved`, `needs-hotfix`, `hotfix-ready`, `deploying`, `deployed`, `failed`) that currently have no functional effect. Selecting a label should update the service's status in the data and reflect correctly in the summary counters and any other status-dependent UI.
+- [x] **Wire up service status labels** — On the "Services in Release" tab, each service card has a row of selectable status labels (`pending`, `branch-cut`, `labeled`, `testing`, `approved`, `needs-hotfix`, `hotfix-ready`, `deploying`, `deployed`, `failed`) that currently have no functional effect. Selecting a label should update the service's status in the data and reflect correctly in the summary counters and any other status-dependent UI.
 
-- **Rename "Label / Tag" to "Label"** — In the service form and service card on the "Services in Release" tab, the field currently labelled "Label / Tag" should be renamed to just "Label".
+- [x] **Rename "Label / Tag" to "Label"** — In the service form and service card on the "Services in Release" tab, the field currently labelled "Label / Tag" should be renamed to just "Label".
 
 - **Move hotfix details below the service info panel** — On each service card, the hotfix section (hotfix label input, notes input, and the three merge status checkboxes for main, release branch, and hotfix branch) should appear directly below the panel that shows service name, repository, and change type — not at the very bottom of the card after the status row.
 

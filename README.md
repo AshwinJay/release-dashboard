@@ -6,7 +6,7 @@ A browser-based dashboard for release managers to intake, coordinate, and track 
 
 Release Command helps a rotating release manager run a weekly release cycle:
 
-- **Thursday** — branches are cut across repos and labels/tags are produced for each service
+- **Thursday** — branches are cut across repos and labels are produced for each service
 - **Thu–Fri** — labels are deployed to pre-production for weekend testing
 - **Weekend** — teams test in pre-production; hotfix branches are cut for any bugs found
 - **Monday** — teams confirm readiness, upstream dependencies are verified, a deployment window opens, teams deploy, and the release is declared done
@@ -92,7 +92,7 @@ Table view — one row per service, one column per region — for tracking where
 
 Regions: `pre-production` `us-east-1` `us-west-2` `eu-west-1` `ap-southeast-1`
 
-The **Label / Tag** column is editable here — this is where release labels (e.g. `v2.14.0-rc1`) are entered for each service. When a service has an active hotfix with a hotfix label set, the hotfix label is shown read-only instead.
+The **Label** column is editable here — this is where release labels (e.g. `v2.14.0-rc1`) are entered for each service. When a service has an active hotfix with a hotfix label set, the hotfix label is shown read-only instead.
 
 Each region cell has a colour-coded dropdown: `pending` (grey) / `deploying` (amber) / `deployed` (green) / `failed` (red).
 
@@ -185,13 +185,13 @@ Each week's release is stored as a single JSON file:
 | `name` | string | Service name |
 | `repo` | string | Repository identifier |
 | `changeType` | `code` \| `config` \| `both` | Nature of the change |
-| `label` | string | Release label/tag (e.g. `v2.14.0-rc1`) |
+| `label` | string | Release label (e.g. `v2.14.0-rc1`) |
 | `poc` | string | Point of contact |
 | `dependencies` | string[] | Names of other services this one depends on |
 | `status` | string | One of `pending` `branch-cut` `labeled` `testing` `approved` `needs-hotfix` `hotfix-ready` `deploying` `deployed` `failed` |
 | `regions` | object | Per-region status: each value is `pending` `deploying` `deployed` `failed` |
 | `hasHotfix` | boolean | Whether a hotfix is active for this service |
-| `hotfixLabel` | string | Hotfix label/tag |
+| `hotfixLabel` | string | Hotfix label |
 | `hotfixNotes` | string | Description of the bug being fixed |
 | `hotfixMergedMain` | boolean | Hotfix merged to main branch |
 | `hotfixMergedRelease` | boolean | Hotfix merged to the release branch |
