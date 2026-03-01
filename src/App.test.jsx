@@ -83,11 +83,11 @@ describe('Summary counters', () => {
     expect(getStatCount('Failed')).toBe('1')
   })
 
-  it('Hotfixes increments when a hotfix is requested', async () => {
+  it('Hotfixes increments when needs-hotfix chip is clicked', async () => {
     render(<App />)
     await waitForLoad()
     addService()
-    fireEvent.click(screen.getByTitle('Request hotfix'))
+    fireEvent.click(screen.getByText('needs-hotfix'))
     expect(getStatCount('Hotfixes')).toBe('1')
   })
 })
@@ -129,12 +129,53 @@ describe('Service status labels', () => {
   })
 })
 
+describe('needs-hotfix chip as hotfix toggle', () => {
+  it('clicking needs-hotfix chip shows the hotfix section', async () => {
+    render(<App />)
+    await waitForLoad()
+    addService()
+    expect(screen.queryByPlaceholderText('e.g. v2.14.1-hotfix')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByText('needs-hotfix'))
+    expect(screen.getByPlaceholderText('e.g. v2.14.1-hotfix')).toBeInTheDocument()
+  })
+
+  it('clicking needs-hotfix chip a second time hides the hotfix section', async () => {
+    render(<App />)
+    await waitForLoad()
+    addService()
+    fireEvent.click(screen.getByText('needs-hotfix'))
+    expect(screen.getByPlaceholderText('e.g. v2.14.1-hotfix')).toBeInTheDocument()
+    // click again — needs-hotfix is now highlighted so getAllByText returns [pill, chip]
+    const chips = screen.getAllByText('needs-hotfix')
+    fireEvent.click(chips[chips.length - 1])
+    expect(screen.queryByPlaceholderText('e.g. v2.14.1-hotfix')).not.toBeInTheDocument()
+    expect(getStatCount('Hotfixes')).toBe('0')
+  })
+
+  it('does not render a dedicated Request Hotfix button', async () => {
+    render(<App />)
+    await waitForLoad()
+    addService()
+    expect(screen.queryByTitle('Request hotfix')).not.toBeInTheDocument()
+    expect(screen.queryByTitle('Cancel hotfix')).not.toBeInTheDocument()
+  })
+
+  it('does not render a separate HOTFIX pill when hotfix is active', async () => {
+    render(<App />)
+    await waitForLoad()
+    addService()
+    fireEvent.click(screen.getByText('needs-hotfix'))
+    // The word "HOTFIX" should not appear as a standalone pill
+    expect(screen.queryByText('HOTFIX')).not.toBeInTheDocument()
+  })
+})
+
 describe('Hotfix section layout', () => {
   it('hotfix details appear before the status strip', async () => {
     render(<App />)
     await waitForLoad()
     addService()
-    fireEvent.click(screen.getByTitle('Request hotfix'))
+    fireEvent.click(screen.getByText('needs-hotfix'))
     const hotfixInput = screen.getByPlaceholderText('e.g. v2.14.1-hotfix')
     const pendingChip = screen.getAllByText('pending').find(
       el => el.tagName.toLowerCase() === 'span' && el.textContent === 'pending'
