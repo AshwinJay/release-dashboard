@@ -29,4 +29,6 @@
 
 - [x] **Merge Regional Deployment Tracker with Services in this Release** — The Regional Deployment Tracker should be merged into the "Services in this Release" view. The `deployed` status chip on each service card should be driven by the region deployments (i.e. a service is considered deployed when its regional deployment data indicates it has been deployed to the relevant regions).
 
+- **Notes section on Release Checklist tab** — Add a dedicated notes section to the Release Checklist tab for capturing ongoing freeform notes. Each note line should support: tags, rich links, text content, a mark-as-done toggle, drag-to-reorder, and up to 3 levels of subnesting (child/grandchild items).
+
 - **Explore CRDT for multi-editor support** — Investigate using a CRDT library (e.g. Yjs, Automerge) to allow multiple users to edit the same release JSON file concurrently without conflicts. Pair with auto-save and live file-read so changes persist to disk automatically and the UI stays in sync when the underlying file is updated externally.
