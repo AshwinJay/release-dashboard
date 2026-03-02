@@ -65,11 +65,14 @@ describe('Summary counters', () => {
     expect(getStatCount('Deployed')).toBe('0')
   })
 
-  it('Deployed increments and Approved stays ≥1 when status is set to deployed', async () => {
+  it('Deployed increments and Approved stays ≥1 when all regions are deployed', async () => {
     render(<App />)
     await waitForLoad()
     addService()
-    fireEvent.click(screen.getByText('deployed'))
+    // deployed status is auto-set once every region reaches "deployed"
+    for (const region of ["pre-production","us-east-1","us-west-2","eu-west-1","ap-southeast-1"]) {
+      fireEvent.change(screen.getByLabelText(`Region ${region}`), {target:{value:"deployed"}})
+    }
     expect(getStatCount('Deployed')).toBe('1')
     // deployed services also count toward Approved
     expect(getStatCount('Approved')).toBe('1')
@@ -79,7 +82,9 @@ describe('Summary counters', () => {
     render(<App />)
     await waitForLoad()
     addService()
-    fireEvent.click(screen.getByText('failed'))
+    // "failed" also appears as <option> in region selects; target the status chip <span>
+    const failedChip = screen.getAllByText('failed').find(el => el.tagName.toLowerCase() === 'span')
+    fireEvent.click(failedChip)
     expect(getStatCount('Failed')).toBe('1')
   })
 
@@ -187,23 +192,64 @@ describe('Hotfix section layout', () => {
   })
 })
 
-describe('Region Deploy tab — Label column', () => {
-  it('shows a "Label" column header (not "Label / Tag")', async () => {
+describe('Label field in service card', () => {
+  it('shows a "Label" field (not "Label / Tag") in the service card', async () => {
     render(<App />)
     await waitForLoad()
     addService()
-    fireEvent.click(screen.getByText('Region Deploy'))
     expect(screen.queryByText('Label / Tag')).not.toBeInTheDocument()
     expect(screen.getByText('Label')).toBeInTheDocument()
   })
 
-  it('label input in regions tab updates the service label', async () => {
+  it('label input in the service card updates the service label', async () => {
     render(<App />)
     await waitForLoad()
     addService('svc-a')
-    fireEvent.click(screen.getByText('Region Deploy'))
     const labelInput = screen.getByPlaceholderText('e.g. v2.14.0-rc1')
     fireEvent.change(labelInput, { target: { value: 'v1.0.0-rc1' } })
     expect(labelInput.value).toBe('v1.0.0-rc1')
+  })
+})
+
+describe('Regional deployment in service card', () => {
+  it('shows region selectors for all regions in each service card', async () => {
+    render(<App />)
+    await waitForLoad()
+    addService()
+    expect(screen.getByLabelText('Region pre-production')).toBeInTheDocument()
+    expect(screen.getByLabelText('Region us-east-1')).toBeInTheDocument()
+    expect(screen.getByLabelText('Region eu-west-1')).toBeInTheDocument()
+  })
+
+  it('auto-sets service status to deployed when all regions are deployed', async () => {
+    render(<App />)
+    await waitForLoad()
+    addService()
+    for (const region of ["pre-production","us-east-1","us-west-2","eu-west-1","ap-southeast-1"]) {
+      fireEvent.change(screen.getByLabelText(`Region ${region}`), {target:{value:"deployed"}})
+    }
+    expect(getStatCount('Deployed')).toBe('1')
+  })
+
+  it('deployed chip has no manual click handler and does not update status when clicked', async () => {
+    render(<App />)
+    await waitForLoad()
+    addService()
+    const deployedChip = screen.getByTitle('Auto-set when all regions are deployed')
+    fireEvent.click(deployedChip)
+    expect(getStatCount('Deployed')).toBe('0')
+  })
+
+  it('reverts from deployed to deploying when a region is un-deployed', async () => {
+    render(<App />)
+    await waitForLoad()
+    addService()
+    for (const region of ["pre-production","us-east-1","us-west-2","eu-west-1","ap-southeast-1"]) {
+      fireEvent.change(screen.getByLabelText(`Region ${region}`), {target:{value:"deployed"}})
+    }
+    expect(getStatCount('Deployed')).toBe('1')
+    // walk back one region
+    fireEvent.change(screen.getByLabelText('Region us-east-1'), {target:{value:"pending"}})
+    expect(getStatCount('Deployed')).toBe('0')
   })
 })

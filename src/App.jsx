@@ -19,6 +19,8 @@ const PHASES = [
 
 const SVC_STATUSES = ["pending","branch-cut","labeled","testing","approved","needs-hotfix","hotfix-ready","deploying","deployed","failed"];
 const REGION_LIST = ["pre-production", "us-east-1", "us-west-2", "eu-west-1", "ap-southeast-1"];
+const REGION_STATUSES = ["pending","deploying","deployed","failed"];
+const REGION_COLORS = {pending:"#6b7280",deploying:"#f59e0b",deployed:"#10b981",failed:"#ef4444"};
 const CHANGE_TYPES = ["code", "config", "both"];
 
 const STATUS_COLORS = {
@@ -112,18 +114,16 @@ function useFileStorage() {
 
   // Auto-save 1s after last change when directory is connected
   useEffect(() => {
-    if (!dirty) return;
+    if (!dirty || !dirHandleRef.current) return;
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
     autoSaveTimer.current = setTimeout(async () => {
-      if (dirHandleRef.current) {
-        try {
-          setSaveStatus("saving");
-          await writeToDir(dirHandleRef.current, fileName, release);
-          setSaveStatus("saved");
-          setDirty(false);
-          setTimeout(() => setSaveStatus("idle"), 2000);
-        } catch { setSaveStatus("error"); }
-      }
+      try {
+        setSaveStatus("saving");
+        await writeToDir(dirHandleRef.current, fileName, release);
+        setSaveStatus("saved");
+        setDirty(false);
+        setTimeout(() => setSaveStatus("idle"), 2000);
+      } catch { setSaveStatus("error"); }
     }, 1000);
     return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); };
   }, [dirty, release, fileName, writeToDir]);
@@ -322,7 +322,7 @@ export default function ReleaseDashboard() {
 
       {/* Tabs */}
       <div style={s.tabBar}>
-        {[{key:"board",label:"Service Board"},{key:"deps",label:"Dependencies"},{key:"regions",label:"Region Deploy"},{key:"checklist",label:"Release Checklist"}].map(tb=>(
+        {[{key:"board",label:"Service Board"},{key:"deps",label:"Dependencies"},{key:"checklist",label:"Release Checklist"}].map(tb=>(
           <button key={tb.key} onClick={()=>setTab(tb.key)} style={{
             ...s.tab,borderBottomColor:tab===tb.key?t.accent:"transparent",color:tab===tb.key?t.text:t.textDim,
           }}>{tb.label}</button>
@@ -332,7 +332,6 @@ export default function ReleaseDashboard() {
       <div style={s.content}>
         {tab==="board"&&<BoardTab release={release} save={save} editingSvc={editingSvc} setEditingSvc={setEditingSvc} showAddForm={showAddForm} setShowAddForm={setShowAddForm} s={s} t={t}/>}
         {tab==="deps"&&<DepsTab release={release} s={s} t={t}/>}
-        {tab==="regions"&&<RegionsTab release={release} save={save} s={s} t={t}/>}
         {tab==="checklist"&&<ChecklistTab release={release} save={save} s={s} t={t}/>}
       </div>
 
@@ -356,7 +355,16 @@ function BoardTab({release,save,editingSvc,setEditingSvc,showAddForm,setShowAddF
   const updateService=(id,patch)=>{save({...release,services:release.services.map(x=>x.id===id?{...x,...patch}:x)});};
   const removeService=(id)=>{if(confirm("Remove this service?")){save({...release,services:release.services.filter(x=>x.id!==id)});if(editingSvc===id)setEditingSvc(null);}};
   const toggleHotfix=(svcId)=>{save({...release,services:release.services.map(x=>x.id===svcId?{...x,hasHotfix:!x.hasHotfix,status:!x.hasHotfix?"needs-hotfix":x.status}:x)});};
-  const updateHotfix=(svcId,field,val)=>{save({...release,services:release.services.map(x=>x.id===svcId?{...x,[field]:val}:x)});};;
+  const updateHotfix=(svcId,field,val)=>{save({...release,services:release.services.map(x=>x.id===svcId?{...x,[field]:val}:x)});};
+  const updateRegion=(svcId,region,regionStatus)=>{
+    save({...release,services:release.services.map(x=>{
+      if(x.id!==svcId)return x;
+      const newRegions={...x.regions,[region]:regionStatus};
+      const allDeployed=REGION_LIST.every(r=>(newRegions[r]||"pending")==="deployed");
+      const newStatus=allDeployed?"deployed":x.status==="deployed"?"deploying":x.status;
+      return {...x,regions:newRegions,status:newStatus};
+    })});
+  };
 
   return (
     <div>
@@ -369,6 +377,7 @@ function BoardTab({release,save,editingSvc,setEditingSvc,showAddForm,setShowAddF
       <div style={{display:"flex",flexDirection:"column",gap:12}}>
         {release.services.map(svc=>(
           <div key={svc.id} style={s.svcCard}>
+            {/* Header */}
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
               <div>
                 <div style={{display:"flex",alignItems:"center",gap:8}}>
@@ -385,10 +394,14 @@ function BoardTab({release,save,editingSvc,setEditingSvc,showAddForm,setShowAddF
                 <button style={s.iconBtn} onClick={()=>removeService(svc.id)}>🗑️</button>
               </div>
             </div>
+            {/* Info row */}
             <div style={{display:"flex",flexWrap:"wrap",gap:16,marginBottom:10}}>
               <div style={{display:"flex",flexDirection:"column",gap:2}}>
                 <span style={s.svcLabel}>Label</span>
-                <code style={s.labelCode}>{svc.hasHotfix&&svc.hotfixLabel?svc.hotfixLabel:svc.label||"—"}</code>
+                {svc.hasHotfix&&svc.hotfixLabel
+                  ?<code style={s.labelCode}>{svc.hotfixLabel}</code>
+                  :<input style={{...s.input,padding:"3px 6px",fontSize:12,fontFamily:"'JetBrains Mono', monospace",width:150}} value={svc.label||""} onChange={e=>updateService(svc.id,{label:e.target.value})} placeholder="e.g. v2.14.0-rc1"/>
+                }
               </div>
               <div style={{display:"flex",flexDirection:"column",gap:2}}>
                 <span style={s.svcLabel}>POC</span><span style={{color:t.text}}>{svc.poc||"—"}</span>
@@ -397,6 +410,7 @@ function BoardTab({release,save,editingSvc,setEditingSvc,showAddForm,setShowAddF
                 <span style={s.svcLabel}>Depends on</span><span style={{color:t.textMuted}}>{svc.dependencies.join(", ")}</span>
               </div>}
             </div>
+            {/* Hotfix section */}
             {svc.hasHotfix&&(
               <div style={{marginTop:10,padding:"12px 14px",borderTop:"2px solid #ef444444",background:"#ef444408",borderRadius:"0 0 6px 6px"}}>
                 <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
@@ -422,17 +436,40 @@ function BoardTab({release,save,editingSvc,setEditingSvc,showAddForm,setShowAddF
                 </div>
               </div>
             )}
+            {/* Region deployment status */}
+            <div style={{display:"flex",flexWrap:"wrap",alignItems:"center",gap:8,padding:"10px 0",borderTop:`1px solid ${t.border}`}}>
+              <span style={{fontSize:10,color:t.textDim,textTransform:"uppercase",letterSpacing:"0.06em",marginRight:4}}>Regions</span>
+              {REGION_LIST.map(r=>{
+                const rStatus=svc.regions?.[r]||"pending";
+                return (
+                  <div key={r} style={{display:"flex",alignItems:"center",gap:4}}>
+                    <span style={{fontSize:10,color:t.textDim,whiteSpace:"nowrap"}}>{r}</span>
+                    <select aria-label={`Region ${r}`} value={rStatus} onChange={e=>updateRegion(svc.id,r,e.target.value)} style={{
+                      ...s.regionSelect,background:REGION_COLORS[rStatus]+"22",
+                      borderColor:REGION_COLORS[rStatus],color:REGION_COLORS[rStatus],
+                    }}>{REGION_STATUSES.map(st=><option key={st} value={st}>{st}</option>)}</select>
+                  </div>
+                );
+              })}
+            </div>
+            {/* Status strip */}
             <div style={{display:"flex",flexWrap:"wrap",gap:4,padding:"10px 0 0",borderTop:`1px solid ${t.border}`}}>
               {SVC_STATUSES.map(st=>{
                 const isHotfixChip = st === "needs-hotfix";
+                const isDeployedChip = st === "deployed";
                 const active = isHotfixChip ? svc.hasHotfix : svc.status === st;
+                const handleClick = isHotfixChip
+                  ? ()=>toggleHotfix(svc.id)
+                  : isDeployedChip ? undefined
+                  : ()=>updateService(svc.id,{status:st});
                 return (
-                  <span key={st} onClick={()=>isHotfixChip?toggleHotfix(svc.id):updateService(svc.id,{status:st})} style={{
-                    fontSize:9,padding:"2px 6px",borderRadius:3,cursor:"pointer",
+                  <span key={st} onClick={handleClick} title={isDeployedChip?"Auto-set when all regions are deployed":undefined} style={{
+                    fontSize:9,padding:"2px 6px",borderRadius:3,cursor:isDeployedChip?"default":"pointer",
                     background:active?STATUS_COLORS[st]:"transparent",
                     color:active?"#fff":t.textFaint,
                     border:`1px solid ${active?STATUS_COLORS[st]:t.border}`,
                     textTransform:"uppercase",fontWeight:600,letterSpacing:"0.03em",transition:"all 0.12s",
+                    opacity:isDeployedChip&&!active?0.5:1,
                   }}>{st}</span>
                 );
               })}
@@ -511,48 +548,6 @@ function DepsTab({release,s,t}) {
             )}
           </div>
         ))}
-      </div>
-    </div>
-  );
-}
-
-function RegionsTab({release,save,s,t}) {
-  const updateRegion=(svcId,region,status)=>{save({...release,services:release.services.map(x=>x.id===svcId?{...x,regions:{...x.regions,[region]:status}}:x)});};
-  const updateLabel=(svcId,val)=>{save({...release,services:release.services.map(x=>x.id===svcId?{...x,label:val}:x)});};
-  if(release.services.length===0)return <div style={s.empty}>Add services to track regional deployments.</div>;
-  const regionStatuses=["pending","deploying","deployed","failed"];
-  const regionColors={pending:"#6b7280",deploying:"#f59e0b",deployed:"#10b981",failed:"#ef4444"};
-  return (
-    <div>
-      <h2 style={s.sectionTitle}>Regional Deployment Tracker</h2>
-      <div style={{overflowX:"auto"}}>
-        <table style={{width:"100%",borderCollapse:"collapse"}}>
-          <thead><tr>
-            <th style={s.th}>Service</th><th style={s.th}>Label</th>
-            {REGION_LIST.map(r=><th key={r} style={s.th}>{r}</th>)}
-          </tr></thead>
-          <tbody>
-            {release.services.map(svc=>(
-              <tr key={svc.id}>
-                <td style={s.td}><span style={{fontWeight:600,color:t.text}}>{svc.name}</span></td>
-                <td style={s.td}>
-                  {svc.hasHotfix&&svc.hotfixLabel
-                    ? <code style={{...s.labelCode,fontSize:11}}>{svc.hotfixLabel}</code>
-                    : <input style={{...s.input,padding:"4px 8px",fontSize:11,fontFamily:"'JetBrains Mono', monospace",minWidth:120}} value={svc.label||""} onChange={e=>updateLabel(svc.id,e.target.value)} placeholder="e.g. v2.14.0-rc1"/>
-                  }
-                </td>
-                {REGION_LIST.map(r=>(
-                  <td key={r} style={s.td}>
-                    <select value={svc.regions[r]||"pending"} onChange={e=>updateRegion(svc.id,r,e.target.value)} style={{
-                      ...s.regionSelect,background:regionColors[svc.regions[r]||"pending"]+"22",
-                      borderColor:regionColors[svc.regions[r]||"pending"],color:regionColors[svc.regions[r]||"pending"],
-                    }}>{regionStatuses.map(st=><option key={st} value={st}>{st}</option>)}</select>
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
       </div>
     </div>
   );

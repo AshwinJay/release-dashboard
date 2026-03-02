@@ -71,8 +71,11 @@ Add and manage every service in the release. Each service card shows:
 - **Repository** and **change type** pill (`code` / `config` / `both`)
 - **POC** — point of contact
 - **Dependencies** — other services in the release this one depends on (shown only when non-empty)
-- **Status selector** — ten clickable chips at the bottom of each card. Clicking one updates the service status immediately and reflects in the summary counters:
-  `pending` `branch-cut` `labeled` `testing` `approved` `needs-hotfix` `hotfix-ready` `deploying` `deployed` `failed`
+- **Label** — release label input (e.g. `v2.14.0-rc1`). Shown read-only as the hotfix label when a hotfix is active.
+- **Regional deployment** — colour-coded dropdowns for each region (`pre-production` `us-east-1` `us-west-2` `eu-west-1` `ap-southeast-1`): `pending` (grey) / `deploying` (amber) / `deployed` (green) / `failed` (red). When all regions reach `deployed`, the service status is automatically set to `deployed`. Reverting any region away from `deployed` reverts the status to `deploying`.
+- **Status selector** — ten clickable chips. Clicking one updates the service status immediately and reflects in the summary counters:
+  `pending` `branch-cut` `labeled` `testing` `approved` `needs-hotfix` `hotfix-ready` `deploying` `deployed`* `failed`
+  (*`deployed` is auto-set by region deployments; clicking it has no effect.)
 - **Inline hotfix section** (shown when a hotfix is active) — red-accented panel with:
   - Hotfix Label input
   - Hotfix Notes input
@@ -85,16 +88,6 @@ Visual card grid showing which services depend on which. Each card shows:
 
 - Upstream dependencies with a green ✅ background if the dependency's status is `approved` or `deployed`, amber ⏳ otherwise
 - Downstream services that depend on this one
-
-### Regional Deployment Tracker
-
-Table view — one row per service, one column per region — for tracking where each label has been deployed.
-
-Regions: `pre-production` `us-east-1` `us-west-2` `eu-west-1` `ap-southeast-1`
-
-The **Label** column is editable here — this is where release labels (e.g. `v2.14.0-rc1`) are entered for each service. When a service has an active hotfix with a hotfix label set, the hotfix label is shown read-only instead.
-
-Each region cell has a colour-coded dropdown: `pending` (grey) / `deploying` (amber) / `deployed` (green) / `failed` (red).
 
 ### Release Checklist
 
