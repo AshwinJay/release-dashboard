@@ -27,4 +27,6 @@
 
 - [x] **Merge "Hotfix" and "Needs Hotfix" labels; replace "Request Hotfix" button** — Remove the dedicated "Request Hotfix" button from the service card. Instead, clicking the `needs-hotfix` status label should toggle hotfix mode on (and off) for that service, replacing both the button and the separate HOTFIX active-state pill. There should be a single combined label that reflects whether the service is in hotfix mode.
 
+- [x] **Merge Regional Deployment Tracker with Services in this Release** — The Regional Deployment Tracker should be merged into the "Services in this Release" view. The `deployed` status chip on each service card should be driven by the region deployments (i.e. a service is considered deployed when its regional deployment data indicates it has been deployed to the relevant regions).
+
 - **Explore CRDT for multi-editor support** — Investigate using a CRDT library (e.g. Yjs, Automerge) to allow multiple users to edit the same release JSON file concurrently without conflicts. Pair with auto-save and live file-read so changes persist to disk automatically and the UI stays in sync when the underlying file is updated externally.
