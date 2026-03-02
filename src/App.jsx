@@ -29,7 +29,7 @@ const STATUS_COLORS = {
   deploying:"#f97316",deployed:"#10b981",failed:"#ef4444",
 };
 
-const EMPTY_RELEASE = { releaseManager: "", releaseBranch: "", hotfixBranch: "", phase: "planning", services: [], notes: "" };
+const EMPTY_RELEASE = { releaseManager: "", releaseBranch: "", hotfixBranch: "", phase: "planning", services: [], notes: [] };
 const EMPTY_SERVICE = {
   id:"",name:"",repo:"",changeType:"code",label:"",hotfixLabel:"",
   poc:"",dependencies:[],status:"pending",regions:{},hasHotfix:false,
@@ -322,7 +322,7 @@ export default function ReleaseDashboard() {
 
       {/* Tabs */}
       <div style={s.tabBar}>
-        {[{key:"board",label:"Service Board"},{key:"deps",label:"Dependencies"},{key:"checklist",label:"Release Checklist"}].map(tb=>(
+        {[{key:"board",label:"Service Board"},{key:"deps",label:"Dependencies"},{key:"checklist",label:"Release Checklist"},{key:"notes",label:"Notes"}].map(tb=>(
           <button key={tb.key} onClick={()=>setTab(tb.key)} style={{
             ...s.tab,borderBottomColor:tab===tb.key?t.accent:"transparent",color:tab===tb.key?t.text:t.textDim,
           }}>{tb.label}</button>
@@ -333,6 +333,7 @@ export default function ReleaseDashboard() {
         {tab==="board"&&<BoardTab release={release} save={save} editingSvc={editingSvc} setEditingSvc={setEditingSvc} showAddForm={showAddForm} setShowAddForm={setShowAddForm} s={s} t={t}/>}
         {tab==="deps"&&<DepsTab release={release} s={s} t={t}/>}
         {tab==="checklist"&&<ChecklistTab release={release} save={save} s={s} t={t}/>}
+        {tab==="notes"&&<NotesTab release={release} save={save} s={s} t={t}/>}
       </div>
 
       {/* Footer */}
@@ -588,10 +589,115 @@ function ChecklistTab({release,save,s,t}) {
           </div>
         );
       })}
-      <div style={{marginTop:24}}>
-        <label style={s.formLabel}>Release Notes / Comments</label>
-        <textarea style={{...s.input,minHeight:80,resize:"vertical"}} value={release.notes||""} onChange={e=>save({...release,notes:e.target.value})} placeholder="Any notes for this week's release…"/>
+    </div>
+  );
+}
+
+// ── Notes Tab ─────────────────────────────────────────────────────────────────
+function makeNote(text="") {
+  return {id:`note-${Date.now()}-${Math.random().toString(36).slice(2,6)}`,text,done:false,tags:[],children:[]};
+}
+
+function parseUrls(text) {
+  return [...(text.match(/https?:\/\/[^\s]+/g)||[])];
+}
+
+function NotesTab({release,save,s,t}) {
+  const notes=Array.isArray(release.notes)?release.notes:[];
+  return (
+    <div>
+      <h2 style={s.sectionTitle}>Notes</h2>
+      <NoteList notes={notes} depth={0} onChange={n=>save({...release,notes:n})} t={t} s={s}/>
+    </div>
+  );
+}
+
+function NoteList({notes,depth,onChange,t,s}) {
+  const [dragIdx,setDragIdx]=useState(null);
+  const [overIdx,setOverIdx]=useState(null);
+  const drop=(toIdx)=>{
+    if(dragIdx==null||dragIdx===toIdx)return;
+    const arr=[...notes];
+    const [item]=arr.splice(dragIdx,1);
+    arr.splice(toIdx,0,item);
+    onChange(arr);
+    setDragIdx(null);setOverIdx(null);
+  };
+  return (
+    <div style={{paddingLeft:depth*24}}>
+      {notes.map((note,idx)=>(
+        <div key={note.id}
+          draggable
+          onDragStart={e=>{e.stopPropagation();setDragIdx(idx);}}
+          onDragOver={e=>{e.preventDefault();e.stopPropagation();setOverIdx(idx);}}
+          onDrop={e=>{e.stopPropagation();drop(idx);}}
+          onDragEnd={()=>{setDragIdx(null);setOverIdx(null);}}
+          style={{opacity:dragIdx===idx?0.4:1,borderTop:overIdx===idx&&dragIdx!==idx?`2px solid ${t.accent}`:"2px solid transparent"}}
+        >
+          <NoteItem note={note} depth={depth}
+            onChange={u=>onChange(notes.map((n,i)=>i===idx?u:n))}
+            onDelete={()=>onChange(notes.filter((_,i)=>i!==idx))}
+            t={t} s={s}/>
+        </div>
+      ))}
+      <button onClick={()=>onChange([...notes,makeNote()])}
+        style={{background:"transparent",border:"none",color:t.textDim,fontSize:12,cursor:"pointer",padding:"6px 4px",fontFamily:"'IBM Plex Sans', sans-serif"}}>
+        + {depth===0?"Add note":"Add sub-item"}
+      </button>
+    </div>
+  );
+}
+
+function NoteItem({note,depth,onChange,onDelete,t,s}) {
+  const [tagInput,setTagInput]=useState("");
+  const [showTagInput,setShowTagInput]=useState(false);
+  const urls=parseUrls(note.text);
+  const addTag=()=>{
+    const tag=tagInput.trim().replace(/^#/,"");
+    if(tag&&!note.tags.includes(tag))onChange({...note,tags:[...note.tags,tag]});
+    setTagInput("");setShowTagInput(false);
+  };
+  return (
+    <div>
+      <div style={{display:"flex",alignItems:"flex-start",gap:6,padding:"5px 4px",borderRadius:4}}>
+        <span style={{cursor:"grab",color:t.textFaint,fontSize:14,paddingTop:3,userSelect:"none",flexShrink:0}} title="Drag to reorder">⠿</span>
+        <input type="checkbox" checked={note.done} onChange={e=>onChange({...note,done:e.target.checked})} style={{marginTop:4,cursor:"pointer",accentColor:t.accent,flexShrink:0}}/>
+        <div style={{flex:1,minWidth:0}}>
+          <input value={note.text} onChange={e=>onChange({...note,text:e.target.value})} placeholder="Note…"
+            style={{...s.input,textDecoration:note.done?"line-through":"none",color:note.done?t.textDim:t.text,padding:"4px 8px",fontSize:13}}/>
+          {(note.tags.length>0||urls.length>0||showTagInput)&&(
+            <div style={{display:"flex",flexWrap:"wrap",gap:4,marginTop:4,alignItems:"center"}}>
+              {note.tags.map(tag=>(
+                <span key={tag} onClick={()=>onChange({...note,tags:note.tags.filter(x=>x!==tag)})}
+                  style={{background:t.accent+"22",color:t.accent,fontSize:11,padding:"1px 6px",borderRadius:10,cursor:"pointer"}} title="Click to remove">#{tag}</span>
+              ))}
+              {urls.map(url=>(
+                <a key={url} href={url} target="_blank" rel="noopener noreferrer"
+                  onClick={e=>e.stopPropagation()}
+                  style={{fontSize:11,color:t.accent,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"inline-block"}}
+                  title={url}>🔗 {url}</a>
+              ))}
+              {showTagInput&&(
+                <input autoFocus value={tagInput} onChange={e=>setTagInput(e.target.value)}
+                  onKeyDown={e=>{if(e.key==="Enter")addTag();if(e.key==="Escape")setShowTagInput(false);}}
+                  onBlur={addTag} placeholder="tag…"
+                  style={{fontSize:11,padding:"1px 8px",borderRadius:10,border:`1px solid ${t.accent}`,background:t.inputBg,color:t.text,outline:"none",width:80,fontFamily:"'IBM Plex Sans', sans-serif"}}/>
+              )}
+            </div>
+          )}
+        </div>
+        <button onClick={()=>setShowTagInput(v=>!v)} title="Add tag"
+          style={{background:"transparent",border:`1px dashed ${t.borderLight}`,color:t.textFaint,fontSize:10,padding:"2px 6px",borderRadius:10,cursor:"pointer",flexShrink:0,marginTop:3}}>+tag</button>
+        {depth<2&&(
+          <button onClick={()=>onChange({...note,children:[...note.children,makeNote()]})} title="Add sub-item"
+            style={{background:"transparent",border:`1px solid ${t.border}`,borderRadius:4,padding:"2px 6px",fontSize:11,cursor:"pointer",color:t.textDim,flexShrink:0,marginTop:3}}>↳</button>
+        )}
+        <button onClick={onDelete}
+          style={{background:"transparent",border:"none",color:t.textFaint,fontSize:18,cursor:"pointer",padding:"0 2px",lineHeight:1,flexShrink:0,marginTop:1}}>×</button>
       </div>
+      {note.children.length>0&&(
+        <NoteList notes={note.children} depth={depth+1} onChange={ch=>onChange({...note,children:ch})} t={t} s={s}/>
+      )}
     </div>
   );
 }

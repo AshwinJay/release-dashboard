@@ -93,7 +93,17 @@ Visual card grid showing which services depend on which. Each card shows:
 
 An 11-item ordered checklist covering the full weekly release lifecycle, from branch-cut through deployment confirmation. Each item is toggled by clicking. Completed items are struck through. A progress bar and `N / 11 complete` count appear above the list.
 
-A **Release Notes / Comments** textarea at the bottom is persisted in the session file.
+### Notes
+
+A structured, freeform notes board for capturing anything that doesn't belong in the checklist. Features:
+
+- **Add note** button creates a new note at the top level
+- **Done toggle** (checkbox) marks a note complete; the text is struck through
+- **Inline tags** — click **+tag**, type a name, press Enter. Tags appear as coloured pills. Click a tag to remove it.
+- **Rich links** — URLs typed in the note text are automatically detected and shown as clickable `🔗` links below the note
+- **Sub-items** — click **↳** to add a child note (up to 3 levels: note → child → grandchild)
+- **Drag-to-reorder** — drag any note row by its `⠿` handle to reorder within its level
+- **Delete** — click **×** to remove a note (and all its children)
 
 ### File Storage
 
@@ -122,7 +132,23 @@ Each week's release is stored as a single JSON file:
   "releaseBranch": "release/2026-W10",
   "hotfixBranch": "hotfix/auth-token-expiry",
   "phase": "deploying",
-  "notes": "Smooth week, one hotfix on auth-service",
+  "notes": [
+    {
+      "id": "note-1234-abc",
+      "text": "Coordinate with Bob on auth-service deploy window",
+      "done": false,
+      "tags": ["auth", "urgent"],
+      "children": [
+        {
+          "id": "note-5678-def",
+          "text": "Check https://status.example.com before deploying",
+          "done": false,
+          "tags": [],
+          "children": []
+        }
+      ]
+    }
+  ],
   "checklist": {
     "branches_cut": true,
     "labels_produced": true
@@ -166,7 +192,7 @@ Each week's release is stored as a single JSON file:
 | `releaseBranch` | string | Release branch name, e.g. `release/2026-W10` |
 | `hotfixBranch` | string | Active hotfix branch name |
 | `phase` | string | Current release phase (`planning` `branch-cut` `labeled` `testing` `review` `deploying` `done`). Stored for data compatibility; drives phase pills in the checklist tab. |
-| `notes` | string | Free-text release notes |
+| `notes` | array | Structured notes list (see Notes tab). Each item: `{ id, text, done, tags, children }`. Children nest up to 3 levels deep. |
 | `checklist` | object | Boolean map of completed checklist item keys |
 | `services` | array | List of service objects (see below) |
 

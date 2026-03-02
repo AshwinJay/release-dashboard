@@ -105,6 +105,78 @@ describe('Checklist tab', () => {
     // Phase pills should still appear next to checklist items
     expect(screen.getAllByText('Branch Cut').length).toBeGreaterThan(0)
   })
+
+  it('does not have a Release Notes / Comments textarea', async () => {
+    render(<App />)
+    await waitForLoad()
+    fireEvent.click(screen.getByText('Release Checklist'))
+    expect(screen.queryByText('Release Notes / Comments')).not.toBeInTheDocument()
+  })
+})
+
+describe('Notes tab', () => {
+  it('has a Notes tab button', async () => {
+    render(<App />)
+    await waitForLoad()
+    expect(screen.getByText('Notes')).toBeInTheDocument()
+  })
+
+  it('shows an Add note button when Notes tab is active', async () => {
+    render(<App />)
+    await waitForLoad()
+    fireEvent.click(screen.getByText('Notes'))
+    expect(screen.getByText('+ Add note')).toBeInTheDocument()
+  })
+
+  it('adds a note input when Add note is clicked', async () => {
+    render(<App />)
+    await waitForLoad()
+    fireEvent.click(screen.getByText('Notes'))
+    fireEvent.click(screen.getByText('+ Add note'))
+    expect(screen.getByPlaceholderText('Note…')).toBeInTheDocument()
+  })
+
+  it('marks a note as done when its checkbox is clicked', async () => {
+    render(<App />)
+    await waitForLoad()
+    fireEvent.click(screen.getByText('Notes'))
+    fireEvent.click(screen.getByText('+ Add note'))
+    const checkbox = screen.getByRole('checkbox')
+    expect(checkbox).not.toBeChecked()
+    fireEvent.click(checkbox)
+    expect(checkbox).toBeChecked()
+  })
+
+  it('deletes a note when × is clicked', async () => {
+    render(<App />)
+    await waitForLoad()
+    fireEvent.click(screen.getByText('Notes'))
+    fireEvent.click(screen.getByText('+ Add note'))
+    expect(screen.getByPlaceholderText('Note…')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('×'))
+    expect(screen.queryByPlaceholderText('Note…')).not.toBeInTheDocument()
+  })
+
+  it('adds a sub-item when the ↳ button is clicked', async () => {
+    render(<App />)
+    await waitForLoad()
+    fireEvent.click(screen.getByText('Notes'))
+    fireEvent.click(screen.getByText('+ Add note'))
+    fireEvent.click(screen.getByTitle('Add sub-item'))
+    expect(screen.getAllByPlaceholderText('Note…').length).toBe(2)
+  })
+
+  it('adds a tag when tag name is entered and submitted', async () => {
+    render(<App />)
+    await waitForLoad()
+    fireEvent.click(screen.getByText('Notes'))
+    fireEvent.click(screen.getByText('+ Add note'))
+    fireEvent.click(screen.getByTitle('Add tag'))
+    const tagInput = screen.getByPlaceholderText('tag…')
+    fireEvent.change(tagInput, { target: { value: 'urgent' } })
+    fireEvent.keyDown(tagInput, { key: 'Enter' })
+    expect(screen.getByText('#urgent')).toBeInTheDocument()
+  })
 })
 
 describe('Service status labels', () => {
