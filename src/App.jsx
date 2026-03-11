@@ -35,6 +35,7 @@ const EMPTY_SERVICE = {
   poc:"",dependencies:[],status:"pending",regions:{},hasHotfix:false,
   hotfixNotes:"",deployConfirmed:false,
   hotfixMergedMain:false,hotfixMergedRelease:false,hotfixMergedHotfix:false,
+  updatedAt:0,deletedAt:null,
 };
 
 const themes = {
@@ -60,12 +61,79 @@ const themes = {
   },
 };
 
+// ── Merge logic ───────────────────────────────────────────────────────────────
+
+// Recursively merge note arrays: union by id, latest updatedAt wins per node.
+// Tombstoned notes are retained (so deletions propagate to peers).
+export function mergeNoteArrays(noteArrays) {
+  const noteMap = new Map();
+  for (const arr of noteArrays) {
+    for (const note of (arr || [])) {
+      const existing = noteMap.get(note.id);
+      if (!existing || (note.updatedAt || 0) > (existing.updatedAt || 0)) {
+        noteMap.set(note.id, note);
+      }
+    }
+  }
+  const result = [];
+  for (const [, note] of noteMap) {
+    // Collect children arrays from every copy of this note across all files
+    const childArrays = noteArrays
+      .flatMap(arr => (arr || []).filter(n => n.id === note.id))
+      .map(n => n.children || []);
+    result.push({ ...note, children: mergeNoteArrays(childArrays) });
+  }
+  return result;
+}
+
+// Merge multiple per-user release files into one unified release.
+//   Scalars (releaseManager, releaseBranch, hotfixBranch, phase): latest savedAt wins
+//   Services: union by id, latest updatedAt wins; tombstones retained but hidden in UI
+//   Notes:    recursive union by id, latest updatedAt wins
+//   Checklist: OR-merge (checked by anyone = checked for all)
+export function mergeReleases(files) {
+  if (!files || files.length === 0) return { ...EMPTY_RELEASE };
+
+  // Scalars from file with latest savedAt
+  const latest = files.reduce((a, b) => (b.savedAt || 0) > (a.savedAt || 0) ? b : a);
+
+  // Services: union by id, latest updatedAt wins
+  const svcMap = new Map();
+  for (const file of files) {
+    for (const svc of (file.services || [])) {
+      const existing = svcMap.get(svc.id);
+      if (!existing || (svc.updatedAt || 0) > (existing.updatedAt || 0)) {
+        svcMap.set(svc.id, svc);
+      }
+    }
+  }
+
+  // Checklist: OR-merge
+  const mergedChecklist = {};
+  for (const file of files) {
+    for (const [k, v] of Object.entries(file.checklist || {})) {
+      mergedChecklist[k] = mergedChecklist[k] || !!v;
+    }
+  }
+
+  return {
+    releaseManager: latest.releaseManager || "",
+    releaseBranch:  latest.releaseBranch  || "",
+    hotfixBranch:   latest.hotfixBranch   || "",
+    phase:          latest.phase          || "planning",
+    savedAt:        latest.savedAt        || 0,
+    services:  Array.from(svcMap.values()),
+    notes:     mergeNoteArrays(files.map(f => f.notes || [])),
+    checklist: mergedChecklist,
+  };
+}
+
 // ── File-based storage ───────────────────────────────────────────────────────
 // Two modes:
 //   1. Chrome/Edge: File System Access API — pick a folder once, auto-saves
 //   2. Fallback: Export (download) / Import (upload) buttons
 
-function useFileStorage() {
+function useFileStorage(username) {
   const [baseName, setBaseName] = useState(`release-${getWeekId()}`);
   const [release, setRelease] = useState({ ...EMPTY_RELEASE });
   const [loading, setLoading] = useState(true);
@@ -76,7 +144,15 @@ function useFileStorage() {
   // Prevents loadRelease from firing after importFile sets baseName + release together
   const skipNextLoad = useRef(false);
   const [hasDirectoryAccess, setHasDirectoryAccess] = useState(false);
-  const fileName = `${baseName}.json`;
+  const [peers, setPeers] = useState([]); // [{username, savedAt}]
+
+  const weekId = getWeekId();
+  // Own file uses username when available; fallback to baseName-derived name
+  const ownFileName = username
+    ? `release-${weekId}-${username}.json`
+    : `release-${weekId}.json`;
+  // Fallback filename for import/export when no folder is connected
+  const exportFileName = hasDirectoryAccess ? ownFileName : `${baseName}.json`;
 
   const readFromDir = useCallback(async (dirHandle, file) => {
     try {
@@ -94,23 +170,65 @@ function useFileStorage() {
     await writable.close();
   }, []);
 
-  // Load from directory (or reset) whenever the active file changes.
-  // All setState calls are inside .then() so they happen asynchronously,
-  // satisfying react-hooks/set-state-in-effect. The initial loading=true
-  // from useState(true) covers the first-render spinner; subsequent session
-  // switches just swap content without an intermediate spinner.
+  // Read all release-YYYY-WNN-*.json files from the folder for a given week.
+  const loadFromFolder = useCallback(async (dirHandle, wId) => {
+    const files = [];
+    const prefix = `release-${wId}-`;
+    try {
+      for await (const entry of dirHandle.values()) {
+        if (entry.kind !== "file") continue;
+        if (!entry.name.startsWith(prefix) || !entry.name.endsWith(".json")) continue;
+        try {
+          const fh = await dirHandle.getFileHandle(entry.name);
+          const f = await fh.getFile();
+          const text = await f.text();
+          const data = JSON.parse(text);
+          const uname = entry.name.slice(prefix.length, -5); // strip prefix + .json
+          files.push({ username: uname, data });
+        } catch { /* skip unreadable files */ }
+      }
+    } catch { /* directory iteration failed */ }
+    return files;
+  }, []);
+
+  // Read all peer files, merge them, and return { merged, peerList }.
+  // Returns null if the folder isn't connected or no files found.
+  const refreshFromFolder = useCallback(async () => {
+    if (!dirHandleRef.current) return null;
+    const files = await loadFromFolder(dirHandleRef.current, getWeekId());
+    if (files.length === 0) return null;
+    const merged = mergeReleases(files.map(f => f.data));
+    const peerList = files
+      .filter(f => f.username !== username)
+      .map(f => ({ username: f.username, savedAt: f.data.savedAt || 0 }));
+    return { merged, peerList };
+  }, [loadFromFolder, username]);
+
+  // Apply a refresh result to state (used by manual refresh + poll).
+  const applyRefresh = useCallback((result) => {
+    if (!result) return;
+    setRelease(result.merged);
+    setPeers(result.peerList);
+  }, []);
+
+  // Load from directory (or reset) whenever baseName or refreshFromFolder changes.
   useEffect(() => {
     if (skipNextLoad.current) { skipNextLoad.current = false; return; }
     const pending = dirHandleRef.current
-      ? readFromDir(dirHandleRef.current, fileName)
+      ? refreshFromFolder()
       : Promise.resolve(null);
-    pending.then(data => {
-      setRelease(data || { ...EMPTY_RELEASE });
+    pending.then(result => {
+      if (result) {
+        setRelease(result.merged);
+        setPeers(result.peerList);
+      } else if (!dirHandleRef.current) {
+        setRelease({ ...EMPTY_RELEASE });
+      }
       setDirty(false);
       setSaveStatus("idle");
       setLoading(false);
     });
-  }, [fileName, readFromDir]);
+  }, [baseName, refreshFromFolder]);
 
   // Auto-save 1s after last change when directory is connected
   useEffect(() => {
@@ -119,16 +237,32 @@ function useFileStorage() {
     autoSaveTimer.current = setTimeout(async () => {
       try {
         setSaveStatus("saving");
-        await writeToDir(dirHandleRef.current, fileName, release);
+        await writeToDir(dirHandleRef.current, ownFileName, { ...release, savedAt: Date.now() });
         setSaveStatus("saved");
         setDirty(false);
         setTimeout(() => setSaveStatus("idle"), 2000);
       } catch { setSaveStatus("error"); }
     }, 1000);
     return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); };
-  }, [dirty, release, fileName, writeToDir]);
+  }, [dirty, release, ownFileName, writeToDir]);
+
+  // Poll every 30s when folder connected and no pending changes
+  useEffect(() => {
+    if (!hasDirectoryAccess) return;
+    const id = setInterval(async () => {
+      if (dirty) return; // don't clobber unsaved user edits
+      const result = await refreshFromFolder();
+      applyRefresh(result);
+    }, 30000);
+    return () => clearInterval(id);
+  }, [hasDirectoryAccess, dirty, refreshFromFolder, applyRefresh]);
 
   const save = (updated) => { setRelease(updated); setDirty(true); };
+
+  const manualRefresh = async () => {
+    const result = await refreshFromFolder();
+    applyRefresh(result);
+  };
 
   const pickDirectory = async () => {
     if (!window.showDirectoryPicker) return false;
@@ -136,17 +270,20 @@ function useFileStorage() {
       const handle = await window.showDirectoryPicker({ mode: "readwrite" });
       dirHandleRef.current = handle;
       setHasDirectoryAccess(true);
-      const data = await readFromDir(handle, fileName);
-      if (data) setRelease(data);
+      const result = await refreshFromFolder();
+      if (result) {
+        setRelease(result.merged);
+        setPeers(result.peerList);
+      }
       return true;
     } catch { return false; }
   };
 
   const exportFile = () => {
-    const blob = new Blob([JSON.stringify(release, null, 2)], { type: "application/json" });
+    const blob = new Blob([JSON.stringify({ ...release, savedAt: Date.now() }, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url; a.download = fileName; a.click();
+    a.href = url; a.download = exportFileName; a.click();
     URL.revokeObjectURL(url);
     setSaveStatus("saved"); setDirty(false);
     setTimeout(() => setSaveStatus("idle"), 2000);
@@ -177,10 +314,13 @@ function useFileStorage() {
   };
 
   return {
-    release, loading, save, dirty, saveStatus, fileName, baseName, setBaseName,
+    release, loading, save, dirty, saveStatus,
+    fileName: exportFileName, baseName, setBaseName,
     pickDirectory, exportFile, importFile,
     hasDirectoryAccess,
     hasFSAccessAPI: !!window.showDirectoryPicker,
+    peers, manualRefresh,
+    ownFileName,
   };
 }
 
@@ -206,6 +346,40 @@ const Pill = ({ color, children, onClick, active }) => (
   }}>{children}</span>
 );
 
+// ── Username modal ────────────────────────────────────────────────────────────
+function UsernameModal({ onConfirm, t }) {
+  const [value, setValue] = useState("");
+  const confirm = () => {
+    const name = value.trim();
+    if (!name) return;
+    onConfirm(name);
+  };
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000}}>
+      <div style={{background:t.bgPanel,border:`1px solid ${t.borderLight}`,borderRadius:12,padding:32,maxWidth:400,width:"100%",margin:"0 16px",boxShadow:"0 20px 60px rgba(0,0,0,0.4)"}}>
+        <h2 style={{fontFamily:"'JetBrains Mono', monospace",fontSize:18,fontWeight:700,color:t.text,marginBottom:8,marginTop:0}}>Welcome</h2>
+        <p style={{color:t.textMuted,fontSize:13,marginBottom:20,lineHeight:1.5}}>
+          Enter your name to identify your changes when collaborating via a shared folder.
+        </p>
+        <input
+          autoFocus
+          value={value}
+          onChange={e => setValue(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && confirm()}
+          placeholder="Your name (e.g. alice)"
+          style={{width:"100%",background:t.inputBg,border:`1px solid ${t.borderLight}`,color:t.text,borderRadius:4,padding:"10px 12px",fontSize:14,outline:"none",fontFamily:"'IBM Plex Sans', sans-serif",boxSizing:"border-box",marginBottom:16}}
+        />
+        <button
+          onClick={confirm}
+          disabled={!value.trim()}
+          style={{background:t.accent,border:"none",color:"#fff",padding:"10px 24px",borderRadius:6,fontWeight:600,fontSize:14,cursor:value.trim()?"pointer":"default",width:"100%",opacity:value.trim()?1:0.5,fontFamily:"'IBM Plex Sans', sans-serif"}}>
+          Get Started
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Dashboard ───────────────────────────────────────────────────────────
 export default function ReleaseDashboard() {
   const mode = useColorScheme();
@@ -216,11 +390,22 @@ export default function ReleaseDashboard() {
   const [editingSvc, setEditingSvc] = useState(null);
   const [showAddForm, setShowAddForm] = useState(false);
 
+  // Username persisted in localStorage; modal shown on first visit
+  const [username, setUsername] = useState(() => localStorage.getItem("rdUsername") || "");
+  const [showUsernameModal, setShowUsernameModal] = useState(() => !localStorage.getItem("rdUsername"));
+
+  const handleSetUsername = (name) => {
+    localStorage.setItem("rdUsername", name);
+    setUsername(name);
+    setShowUsernameModal(false);
+  };
+
   const {
     release, loading, save, dirty, saveStatus, fileName, baseName, setBaseName,
     pickDirectory, exportFile, importFile,
     hasDirectoryAccess, hasFSAccessAPI,
-  } = useFileStorage();
+    peers, manualRefresh, ownFileName,
+  } = useFileStorage(username);
 
   // Controlled input for the session file name — only commits to baseName on blur/Enter
   // so typing character-by-character doesn't trigger a reload on each keystroke
@@ -234,11 +419,12 @@ export default function ReleaseDashboard() {
     </div>
   );
 
-  const svcCount = release.services.length;
-  const deployedCount = release.services.filter(x=>x.status==="deployed").length;
-  const hotfixCount = release.services.filter(x=>x.hasHotfix).length;
-  const failedCount = release.services.filter(x=>x.status==="failed").length;
-  const approvedCount = release.services.filter(x=>x.status==="approved"||x.status==="deployed").length;
+  const activeServices = release.services.filter(x => !x.deletedAt);
+  const svcCount = activeServices.length;
+  const deployedCount = activeServices.filter(x=>x.status==="deployed").length;
+  const hotfixCount = activeServices.filter(x=>x.hasHotfix).length;
+  const failedCount = activeServices.filter(x=>x.status==="failed").length;
+  const approvedCount = activeServices.filter(x=>x.status==="approved"||x.status==="deployed").length;
 
   const statusLabel = {idle:"",saving:"Saving…",saved:"✓ Saved",error:"⚠ Save failed"}[saveStatus];
   const statusColor = {idle:t.textFaint,saving:t.textDim,saved:"#10b981",error:"#ef4444"}[saveStatus];
@@ -247,6 +433,8 @@ export default function ReleaseDashboard() {
     <div style={s.root}>
       <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
 
+      {showUsernameModal && <UsernameModal onConfirm={handleSetUsername} t={t} />}
+
       {/* ── Header ─────────────────────────────────────────────── */}
       <header style={s.header}>
         <div style={s.headerLeft}>
@@ -254,17 +442,25 @@ export default function ReleaseDashboard() {
             <span style={{fontSize:22,color:t.accent}}>◈</span>
             <span style={{fontFamily:"'JetBrains Mono', monospace",fontWeight:700,fontSize:14,letterSpacing:"0.1em",color:t.text}}>RELEASE COMMAND</span>
           </div>
-          <div>
-            <span style={{color:t.textDim,fontSize:10,textTransform:"uppercase",letterSpacing:"0.08em",display:"block"}}>Session File</span>
-            <input
-              style={{...s.rmInput,fontFamily:"'JetBrains Mono', monospace",fontSize:14,color:t.accent,minWidth:200}}
-              value={fileInput}
-              onChange={e=>setFileInput(e.target.value)}
-              onBlur={commitFileName}
-              onKeyDown={e=>e.key==="Enter"&&commitFileName()}
-              placeholder={`release-${getWeekId()}`}
-            />
-          </div>
+          {!hasDirectoryAccess && (
+            <div>
+              <span style={{color:t.textDim,fontSize:10,textTransform:"uppercase",letterSpacing:"0.08em",display:"block"}}>Session File</span>
+              <input
+                style={{...s.rmInput,fontFamily:"'JetBrains Mono', monospace",fontSize:14,color:t.accent,minWidth:200}}
+                value={fileInput}
+                onChange={e=>setFileInput(e.target.value)}
+                onBlur={commitFileName}
+                onKeyDown={e=>e.key==="Enter"&&commitFileName()}
+                placeholder={`release-${getWeekId()}`}
+              />
+            </div>
+          )}
+          {hasDirectoryAccess && (
+            <div>
+              <span style={{color:t.textDim,fontSize:10,textTransform:"uppercase",letterSpacing:"0.08em",display:"block"}}>Active File</span>
+              <span style={{fontFamily:"'JetBrains Mono', monospace",fontSize:13,color:t.accent,fontWeight:600}}>{ownFileName}</span>
+            </div>
+          )}
         </div>
         <div style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
           {/* Save controls */}
@@ -272,11 +468,31 @@ export default function ReleaseDashboard() {
             {statusLabel&&<span style={{fontFamily:"'JetBrains Mono', monospace",fontSize:11,color:statusColor,fontWeight:600}}>{statusLabel}</span>}
             {dirty&&!hasDirectoryAccess&&<span style={{fontSize:10,color:"#f59e0b",fontWeight:600}}>● unsaved</span>}
           </div>
+          {/* Peers indicator */}
+          {hasDirectoryAccess && (
+            <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+              {username && (
+                <span title="Your username" style={{fontSize:11,fontWeight:600,color:t.textMuted,background:t.inputBg,padding:"2px 8px",borderRadius:10,border:`1px solid ${t.border}`}}>
+                  👤 {username}
+                </span>
+              )}
+              {peers.map(p => (
+                <span key={p.username}
+                  title={p.savedAt ? `Last seen: ${new Date(p.savedAt).toLocaleTimeString()}` : "No data yet"}
+                  style={{fontSize:11,fontWeight:600,color:"#10b981",background:"#10b98115",padding:"2px 8px",borderRadius:10,border:"1px solid #10b98133"}}>
+                  👤 {p.username}
+                </span>
+              ))}
+            </div>
+          )}
           <div style={{display:"flex",gap:6}}>
             {hasFSAccessAPI&&(
-              <button style={s.fileBtn} onClick={pickDirectory} title="Pick a folder for auto-save">
-                {hasDirectoryAccess?"📂 Connected":"📂 Set Save Folder"}
+              <button style={s.fileBtn} onClick={pickDirectory} title="Pick a shared folder for multi-user auto-save">
+                {hasDirectoryAccess?"📂 Connected":"📂 Set Sync Folder"}
               </button>
+            )}
+            {hasDirectoryAccess && (
+              <button style={s.fileBtn} onClick={manualRefresh} title="Re-read all files in the shared folder">🔄 Refresh</button>
             )}
             <button style={s.fileBtn} onClick={exportFile} title={`Download ${fileName}`}>💾 Export</button>
             <button style={s.fileBtn} onClick={importFile} title="Load a release JSON file">📄 Import</button>
@@ -300,7 +516,7 @@ export default function ReleaseDashboard() {
       {!hasDirectoryAccess&&hasFSAccessAPI&&(
         <div style={{padding:"8px 24px",background:t.accent+"15",borderBottom:`1px solid ${t.accent}33`,display:"flex",alignItems:"center",gap:8}}>
           <span style={{fontSize:13,color:t.accent}}>💡</span>
-          <span style={{fontSize:12,color:t.textMuted}}>Click <strong>"Set Save Folder"</strong> to auto-save weekly JSON files to a directory. Until then, use Export/Import.</span>
+          <span style={{fontSize:12,color:t.textMuted}}>Click <strong>"Set Sync Folder"</strong> to collaborate via a shared cloud folder (Google Drive, Dropbox, OneDrive…). Each user's changes are saved as a separate file and merged automatically.</span>
         </div>
       )}
       {!hasFSAccessAPI&&(
@@ -339,7 +555,7 @@ export default function ReleaseDashboard() {
       {/* Footer */}
       <div style={{padding:"12px 24px",borderTop:`1px solid ${t.border}`,background:t.bgPanel,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
         <span style={{fontFamily:"'JetBrains Mono', monospace",fontSize:11,color:t.textFaint}}>📁 {fileName}</span>
-        <span style={{fontSize:11,color:t.textFaint}}>{release.services.length} service{release.services.length!==1?"s":""} tracked</span>
+        <span style={{fontSize:11,color:t.textFaint}}>{svcCount} service{svcCount!==1?"s":""} tracked</span>
       </div>
     </div>
   );
@@ -350,22 +566,36 @@ function BoardTab({release,save,editingSvc,setEditingSvc,showAddForm,setShowAddF
   const addService=(svc)=>{
     const id=`svc-${Date.now()}`;const regions={};
     REGION_LIST.forEach(r=>(regions[r]="pending"));
-    save({...release,services:[...release.services,{...EMPTY_SERVICE,...svc,id,regions}]});
+    save({...release,services:[...release.services,{...EMPTY_SERVICE,...svc,id,regions,updatedAt:Date.now()}]});
     setShowAddForm(false);
   };
-  const updateService=(id,patch)=>{save({...release,services:release.services.map(x=>x.id===id?{...x,...patch}:x)});};
-  const removeService=(id)=>{if(confirm("Remove this service?")){save({...release,services:release.services.filter(x=>x.id!==id)});if(editingSvc===id)setEditingSvc(null);}};
-  const toggleHotfix=(svcId)=>{save({...release,services:release.services.map(x=>x.id===svcId?{...x,hasHotfix:!x.hasHotfix,status:!x.hasHotfix?"needs-hotfix":x.status}:x)});};
-  const updateHotfix=(svcId,field,val)=>{save({...release,services:release.services.map(x=>x.id===svcId?{...x,[field]:val}:x)});};
+  const updateService=(id,patch)=>{
+    save({...release,services:release.services.map(x=>x.id===id?{...x,...patch,updatedAt:Date.now()}:x)});
+  };
+  const removeService=(id)=>{
+    if(confirm("Remove this service?")){
+      const now=Date.now();
+      save({...release,services:release.services.map(x=>x.id===id?{...x,deletedAt:now,updatedAt:now}:x)});
+      if(editingSvc===id)setEditingSvc(null);
+    }
+  };
+  const toggleHotfix=(svcId)=>{
+    save({...release,services:release.services.map(x=>x.id===svcId?{...x,hasHotfix:!x.hasHotfix,status:!x.hasHotfix?"needs-hotfix":x.status,updatedAt:Date.now()}:x)});
+  };
+  const updateHotfix=(svcId,field,val)=>{
+    save({...release,services:release.services.map(x=>x.id===svcId?{...x,[field]:val,updatedAt:Date.now()}:x)});
+  };
   const updateRegion=(svcId,region,regionStatus)=>{
     save({...release,services:release.services.map(x=>{
       if(x.id!==svcId)return x;
       const newRegions={...x.regions,[region]:regionStatus};
       const allDeployed=REGION_LIST.every(r=>(newRegions[r]||"pending")==="deployed");
       const newStatus=allDeployed?"deployed":x.status==="deployed"?"deploying":x.status;
-      return {...x,regions:newRegions,status:newStatus};
+      return {...x,regions:newRegions,status:newStatus,updatedAt:Date.now()};
     })});
   };
+
+  const activeServices = release.services.filter(x => !x.deletedAt);
 
   return (
     <div>
@@ -373,10 +603,10 @@ function BoardTab({release,save,editingSvc,setEditingSvc,showAddForm,setShowAddF
         <h2 style={s.sectionTitle}>Services in this Release</h2>
         <button style={s.addBtn} onClick={()=>setShowAddForm(true)}>+ Add Service</button>
       </div>
-      {showAddForm&&<ServiceForm allServices={release.services} onSave={addService} onCancel={()=>setShowAddForm(false)} s={s} t={t}/>}
-      {release.services.length===0&&<div style={s.empty}>No services added yet. Click "+ Add Service" to begin.</div>}
+      {showAddForm&&<ServiceForm allServices={activeServices} onSave={addService} onCancel={()=>setShowAddForm(false)} s={s} t={t}/>}
+      {activeServices.length===0&&<div style={s.empty}>No services added yet. Click "+ Add Service" to begin.</div>}
       <div style={{display:"flex",flexDirection:"column",gap:12}}>
-        {release.services.map(svc=>(
+        {activeServices.map(svc=>(
           <div key={svc.id} style={s.svcCard}>
             {/* Header */}
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
@@ -475,7 +705,7 @@ function BoardTab({release,save,editingSvc,setEditingSvc,showAddForm,setShowAddF
                 );
               })}
             </div>
-            {editingSvc===svc.id&&<ServiceForm initial={svc} allServices={release.services} onSave={patch=>{updateService(svc.id,patch);setEditingSvc(null);}} onCancel={()=>setEditingSvc(null)} isEdit s={s} t={t}/>}
+            {editingSvc===svc.id&&<ServiceForm initial={svc} allServices={activeServices} onSave={patch=>{updateService(svc.id,patch);setEditingSvc(null);}} onCancel={()=>setEditingSvc(null)} isEdit s={s} t={t}/>}
           </div>
         ))}
       </div>
@@ -510,7 +740,7 @@ function ServiceForm({initial,allServices,onSave,onCancel,isEdit,s}) {
 }
 
 function DepsTab({release,s,t}) {
-  const services=release.services;
+  const services=release.services.filter(x=>!x.deletedAt);
   if(services.length===0)return <div style={s.empty}>Add services first to see the dependency map.</div>;
   return (
     <div>
@@ -595,7 +825,11 @@ function ChecklistTab({release,save,s,t}) {
 
 // ── Notes Tab ─────────────────────────────────────────────────────────────────
 function makeNote(text="") {
-  return {id:`note-${Date.now()}-${Math.random().toString(36).slice(2,6)}`,text,done:false,tags:[],children:[]};
+  return {
+    id:`note-${Date.now()}-${Math.random().toString(36).slice(2,6)}`,
+    text,done:false,tags:[],children:[],
+    updatedAt:Date.now(),deletedAt:null,
+  };
 }
 
 function parseUrls(text) {
@@ -613,19 +847,24 @@ function NotesTab({release,save,s,t}) {
 }
 
 function NoteList({notes,depth,onChange,t,s}) {
+  const visibleNotes = notes.filter(n => !n.deletedAt);
   const [dragIdx,setDragIdx]=useState(null);
   const [overIdx,setOverIdx]=useState(null);
+
   const drop=(toIdx)=>{
     if(dragIdx==null||dragIdx===toIdx)return;
-    const arr=[...notes];
-    const [item]=arr.splice(dragIdx,1);
-    arr.splice(toIdx,0,item);
-    onChange(arr);
+    // Reorder visible notes, then append tombstoned notes at end
+    const visible=[...visibleNotes];
+    const [item]=visible.splice(dragIdx,1);
+    visible.splice(toIdx,0,item);
+    const tombstoned=notes.filter(n=>n.deletedAt);
+    onChange([...visible,...tombstoned]);
     setDragIdx(null);setOverIdx(null);
   };
+
   return (
     <div style={{paddingLeft:depth*24}}>
-      {notes.map((note,idx)=>(
+      {visibleNotes.map((note,idx)=>(
         <div key={note.id}
           draggable
           onDragStart={e=>{e.stopPropagation();setDragIdx(idx);}}
@@ -635,8 +874,11 @@ function NoteList({notes,depth,onChange,t,s}) {
           style={{opacity:dragIdx===idx?0.4:1,borderTop:overIdx===idx&&dragIdx!==idx?`2px solid ${t.accent}`:"2px solid transparent"}}
         >
           <NoteItem note={note} depth={depth}
-            onChange={u=>onChange(notes.map((n,i)=>i===idx?u:n))}
-            onDelete={()=>onChange(notes.filter((_,i)=>i!==idx))}
+            onChange={u=>onChange(notes.map(n=>n.id===note.id?u:n))}
+            onDelete={()=>{
+              const now=Date.now();
+              onChange(notes.map(n=>n.id===note.id?{...n,deletedAt:now,updatedAt:now}:n));
+            }}
             t={t} s={s}/>
         </div>
       ))}
@@ -654,21 +896,21 @@ function NoteItem({note,depth,onChange,onDelete,t,s}) {
   const urls=parseUrls(note.text);
   const addTag=()=>{
     const tag=tagInput.trim().replace(/^#/,"");
-    if(tag&&!note.tags.includes(tag))onChange({...note,tags:[...note.tags,tag]});
+    if(tag&&!note.tags.includes(tag))onChange({...note,tags:[...note.tags,tag],updatedAt:Date.now()});
     setTagInput("");setShowTagInput(false);
   };
   return (
     <div>
       <div style={{display:"flex",alignItems:"flex-start",gap:6,padding:"5px 4px",borderRadius:4}}>
         <span style={{cursor:"grab",color:t.textFaint,fontSize:14,paddingTop:3,userSelect:"none",flexShrink:0}} title="Drag to reorder">⠿</span>
-        <input type="checkbox" checked={note.done} onChange={e=>onChange({...note,done:e.target.checked})} style={{marginTop:4,cursor:"pointer",accentColor:t.accent,flexShrink:0}}/>
+        <input type="checkbox" checked={note.done} onChange={e=>onChange({...note,done:e.target.checked,updatedAt:Date.now()})} style={{marginTop:4,cursor:"pointer",accentColor:t.accent,flexShrink:0}}/>
         <div style={{flex:1,minWidth:0}}>
-          <input value={note.text} onChange={e=>onChange({...note,text:e.target.value})} placeholder="Note…"
+          <input value={note.text} onChange={e=>onChange({...note,text:e.target.value,updatedAt:Date.now()})} placeholder="Note…"
             style={{...s.input,textDecoration:note.done?"line-through":"none",color:note.done?t.textDim:t.text,padding:"4px 8px",fontSize:13}}/>
           {(note.tags.length>0||urls.length>0||showTagInput)&&(
             <div style={{display:"flex",flexWrap:"wrap",gap:4,marginTop:4,alignItems:"center"}}>
               {note.tags.map(tag=>(
-                <span key={tag} onClick={()=>onChange({...note,tags:note.tags.filter(x=>x!==tag)})}
+                <span key={tag} onClick={()=>onChange({...note,tags:note.tags.filter(x=>x!==tag),updatedAt:Date.now()})}
                   style={{background:t.accent+"22",color:t.accent,fontSize:11,padding:"1px 6px",borderRadius:10,cursor:"pointer"}} title="Click to remove">#{tag}</span>
               ))}
               {urls.map(url=>(
@@ -695,7 +937,7 @@ function NoteItem({note,depth,onChange,onDelete,t,s}) {
         <button onClick={onDelete}
           style={{background:"transparent",border:"none",color:t.textFaint,fontSize:18,cursor:"pointer",padding:"0 2px",lineHeight:1,flexShrink:0,marginTop:1}}>×</button>
       </div>
-      {note.children.length>0&&(
+      {note.children.filter(c=>!c.deletedAt).length>0&&(
         <NoteList notes={note.children} depth={depth+1} onChange={ch=>onChange({...note,children:ch})} t={t} s={s}/>
       )}
     </div>

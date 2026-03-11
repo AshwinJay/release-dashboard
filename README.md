@@ -45,10 +45,13 @@ The output in `dist/` is a static site — host it anywhere (Nginx, S3, GitHub P
 
 Always visible at the top of the page:
 
-- **Session File** — editable filename (monospace). Press Enter or blur to switch sessions. Defaults to `release-<YYYY-Www>` for the current ISO week.
-- **Release Manager** — free-text name, stored in the session file
-- **Release Branch** — e.g. `release/2026-W10`, stored in the session file
-- **Hotfix Branch** — e.g. `hotfix/auth-token-expiry`, stored in the session file
+- **Username** — prompted on first launch; stored in `localStorage`. Identifies your file in a shared folder (`release-YYYY-WNN-<username>.json`).
+- **Session File** — editable filename (monospace), shown when no sync folder is connected. Press Enter or blur to switch sessions. Defaults to `release-<YYYY-Www>` for the current ISO week.
+- **Active File** — shown instead of Session File when a sync folder is connected; displays the current per-user filename.
+- **Peers** — when a sync folder is connected, green pills show which other users have a file for this week. Hover for last-seen time.
+- **Release Manager** — free-text name, stored in the file
+- **Release Branch** — e.g. `release/2026-W10`, stored in the file
+- **Hotfix Branch** — e.g. `hotfix/auth-token-expiry`, stored in the file
 - **Save controls** — file operation buttons (see Storage) and an inline save-status indicator (`Saving…` / `✓ Saved` / `⚠ Save failed` / `● unsaved`)
 
 ### Summary Counters
@@ -80,7 +83,7 @@ Add and manage every service in the release. Each service card shows:
   - Hotfix Label input
   - Hotfix Notes input
   - Three merge-status checkboxes: **Merged to main** / **Merged to `<releaseBranch>`** / **Merged to `<hotfixBranch>`** (labels use the actual branch names from the header when set)
-- **Action buttons** — 🔥 toggle hotfix on/off, ✏️ edit inline, 🗑️ remove
+- **Action buttons** — ✏️ edit inline, 🗑️ remove (delete is tombstoned so it propagates to peers in sync mode)
 
 ### Dependency Map
 
@@ -105,16 +108,37 @@ A structured, freeform notes board for capturing anything that doesn't belong in
 - **Drag-to-reorder** — drag any note row by its `⠿` handle to reorder within its level
 - **Delete** — click **×** to remove a note (and all its children)
 
+### Multi-user Collaboration
+
+Multiple release managers can work on the same release week simultaneously using a shared cloud folder (Google Drive for Desktop, OneDrive, Dropbox, iCloud Drive, or any locally-mounted sync folder).
+
+**How it works:**
+
+1. Each user is prompted for their name on first launch (stored in `localStorage`).
+2. Each user's changes are saved as their own file: `release-YYYY-WNN-<username>.json` (e.g. `release-2026-W10-alice.json`).
+3. On load and every 30 seconds, the app reads **all** `release-YYYY-WNN-*.json` files in the folder and merges them into a single unified view.
+4. The header shows who else has a file in the folder (green pills) with their last-seen time on hover.
+
+**Merge strategy:**
+
+| Data type | Rule |
+|---|---|
+| Scalar fields (`releaseManager`, `releaseBranch`, `hotfixBranch`, `phase`) | Latest `savedAt` timestamp wins |
+| Services | Union by `id`; latest `updatedAt` per service wins |
+| Service deletes | Tombstoned (`deletedAt`); tombstones propagate to all peers |
+| Notes | Recursive union by `id`; latest `updatedAt` per note wins; tombstones propagate |
+| Checklist | OR-merge — checked by anyone = checked for all |
+
+No server, no OAuth, no API keys. Cloud sync is handled by the OS sync client.
+
 ### File Storage
 
-Data is saved as `release-YYYY-WNN.json` (e.g. `release-2026-W10.json`). Two modes:
+Two modes depending on browser support:
 
-- **Chrome / Edge** — uses the [File System Access API](https://developer.chrome.com/docs/capabilities/web-apis/file-system-access). Click **📂 Set Save Folder** once; changes auto-save after a 1-second debounce. A hint banner prompts for this when no folder is connected.
+- **Chrome / Edge** — uses the [File System Access API](https://developer.chrome.com/docs/capabilities/web-apis/file-system-access). Click **📂 Set Sync Folder** once; changes auto-save after a 1-second debounce and the folder is polled every 30 seconds for peer changes. A hint banner prompts for this when no folder is connected.
 - **Other browsers** — use **💾 Export** to download the JSON and **📄 Import** to load it back. A banner explains this when the FSA API is unavailable.
 
 Importing a file also updates the session name to match the loaded file's name.
-
-Files can be stored in any shared folder (e.g. a network drive or synced cloud folder) so the whole team has access to historical data.
 
 ### Dark / Light Mode
 
@@ -132,18 +156,23 @@ Each week's release is stored as a single JSON file:
   "releaseBranch": "release/2026-W10",
   "hotfixBranch": "hotfix/auth-token-expiry",
   "phase": "deploying",
+  "savedAt": 1741650000000,
   "notes": [
     {
       "id": "note-1234-abc",
       "text": "Coordinate with Bob on auth-service deploy window",
       "done": false,
       "tags": ["auth", "urgent"],
+      "updatedAt": 1741640000000,
+      "deletedAt": null,
       "children": [
         {
           "id": "note-5678-def",
           "text": "Check https://status.example.com before deploying",
           "done": false,
           "tags": [],
+          "updatedAt": 1741641000000,
+          "deletedAt": null,
           "children": []
         }
       ]
@@ -176,7 +205,9 @@ Each week's release is stored as a single JSON file:
       "hotfixMergedMain": true,
       "hotfixMergedRelease": true,
       "hotfixMergedHotfix": false,
-      "deployConfirmed": false
+      "deployConfirmed": false,
+      "updatedAt": 1741649000000,
+      "deletedAt": null
     }
   ]
 }
@@ -192,7 +223,8 @@ Each week's release is stored as a single JSON file:
 | `releaseBranch` | string | Release branch name, e.g. `release/2026-W10` |
 | `hotfixBranch` | string | Active hotfix branch name |
 | `phase` | string | Current release phase (`planning` `branch-cut` `labeled` `testing` `review` `deploying` `done`). Stored for data compatibility; drives phase pills in the checklist tab. |
-| `notes` | array | Structured notes list (see Notes tab). Each item: `{ id, text, done, tags, children }`. Children nest up to 3 levels deep. |
+| `savedAt` | number | Unix timestamp (ms) of the last save. Used for scalar last-write-wins during merge. |
+| `notes` | array | Structured notes list (see Notes tab). Each item: `{ id, text, done, tags, children, updatedAt, deletedAt }`. Children nest up to 3 levels deep. |
 | `checklist` | object | Boolean map of completed checklist item keys |
 | `services` | array | List of service objects (see below) |
 
@@ -216,3 +248,5 @@ Each week's release is stored as a single JSON file:
 | `hotfixMergedRelease` | boolean | Hotfix merged to the release branch |
 | `hotfixMergedHotfix` | boolean | Hotfix merged to the hotfix branch |
 | `deployConfirmed` | boolean | Stored for future use; not yet surfaced in the UI |
+| `updatedAt` | number | Unix ms timestamp of the last mutation to this service; used for last-write-wins merge |
+| `deletedAt` | number \| null | Unix ms timestamp when deleted, or `null`; tombstones propagate deletes to all peers |
